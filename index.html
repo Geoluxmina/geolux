@@ -89,7 +89,7 @@
     <button data-aba="relatorios">Relatórios</button>
     <button data-aba="conferir" data-admin>A conferir</button>
     <button data-aba="envio" data-admin>Envio semanal</button>
-    <button data-aba="cadastros" data-admin>Cadastros</button>
+    <button data-aba="cadastros">Cadastros</button>
     <button data-aba="fechamento" data-admin>Backup</button>
   </nav>
   <main>
@@ -108,6 +108,7 @@
           Anexar o mesmo arquivo ou o mesmo tiquete duas vezes não duplica nada.</p>
       </div>
       <div id="previa"></div>
+      <div id="conferencia"></div>
       <div class="card">
         <h3 style="margin-top:0">Relatórios já anexados</h3>
         <p id="anexosAjuda" style="color:var(--suave);font-size:13px;margin-top:0"></p>
@@ -177,17 +178,39 @@
 
     <!-- CADASTROS -->
     <section id="aba-cadastros" class="escondido">
-      <div class="card">
+      <div class="card" data-admin>
         <h3 style="margin-top:0">Nomes de produto da balança</h3>
         <p style="color:var(--suave);font-size:13px;margin-top:0">Cada nome que aparece no relatório da balança precisa apontar para um produto do sistema.</p>
         <div class="tabela" id="tabApelidos"></div>
       </div>
       <div class="card">
         <h3 style="margin-top:0">Clientes</h3>
-        <p style="color:var(--suave);font-size:13px;margin-top:0">Clientes novos entram sozinhos ao anexar o relatório. Complete aqui o nome completo e o documento, que saem no comprovante.</p>
+        <p style="color:var(--suave);font-size:13px;margin-top:0">Clientes novos também entram sozinhos ao anexar o relatório. Complete aqui o nome completo, o documento (sai no comprovante) e o WhatsApp com DDD.
+          O "nome na balança" precisa ser igual ao que sai no relatório da balança.</p>
+        <div class="linha" style="margin-bottom:10px">
+          <label>Nome na balança <input id="ncBalanca"></label>
+          <label>Nome completo <input id="ncNome"></label>
+          <label>CPF/CNPJ <input id="ncDoc"></label>
+          <label>WhatsApp <input id="ncFone"></label>
+          <button class="bt" id="btNovoCliente">Adicionar cliente</button>
+        </div>
+        <div id="clienteMsg"></div>
         <div class="tabela" id="tabClientes"></div>
       </div>
       <div class="card">
+        <h3 style="margin-top:0">Placas</h3>
+        <p style="color:var(--suave);font-size:13px;margin-top:0">Caminhões que retiram material. Ao anexar o relatório, o sistema avisa quando aparece uma placa sem cadastro.</p>
+        <div class="linha" style="margin-bottom:10px">
+          <label>Placa <input id="npPlaca" placeholder="ABC1D23" style="min-width:100px"></label>
+          <label>Cliente <select id="npCliente"></select></label>
+          <label>Motorista <input id="npMotorista"></label>
+          <label>Transportador <input id="npTransp"></label>
+          <button class="bt" id="btNovaPlaca">Adicionar placa</button>
+        </div>
+        <div id="placaMsg"></div>
+        <div class="tabela" id="tabPlacas"></div>
+      </div>
+      <div class="card" data-admin>
         <h3 style="margin-top:0">Produtos</h3>
         <div class="linha" style="margin-bottom:10px">
           <label>Novo produto <input id="novoProduto"></label>
@@ -195,7 +218,7 @@
         </div>
         <div class="tabela" id="tabProdutos"></div>
       </div>
-      <div class="card">
+      <div class="card" data-admin>
         <h3 style="margin-top:0">Usuários</h3>
         <div class="tabela" id="tabUsuarios"></div>
       </div>
@@ -347,7 +370,7 @@ async function iniciar() {
   if (!session) { $("#login").classList.remove("escondido"); $("#app").classList.add("escondido"); return; }
   usuario = session.user;
   const { data: perfil } = await db.from("perfis").select("papel,nome").eq("user_id", usuario.id).maybeSingle();
-  if (!perfil) { msg("#loginMsg", "erro", "Este usuário ainda não tem perfil no sistema. Peça ao administrador para liberar."); await db.auth.signOut(); return; }
+  if (!perfil) { msg("#loginMsg", "erro", "Este usuário ainda não tem perfil no sistema. Peça ao administrador para liberar."); await db.auth.signOut({ scope: "local" }); return; }
   papel = perfil.papel;
   $("#quem").textContent = `${perfil.nome || usuario.email} · ${papel === "admin" ? "Administrador" : "Balança"}`;
   $("#sair").classList.remove("escondido");
@@ -368,7 +391,8 @@ $("#formLogin").addEventListener("submit", async e => {
   if (error) return msg("#loginMsg", "erro", "E-mail ou senha incorretos.");
   msg("#loginMsg"); iniciar();
 });
-$("#sair").addEventListener("click", async () => { await db.auth.signOut(); location.reload(); });
+// sair só deste computador; o mesmo login continua aberto nos outros
+$("#sair").addEventListener("click", async () => { await db.auth.signOut({ scope: "local" }); location.reload(); });
 
 document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("#abas button").forEach(x => x.classList.toggle("ativo", x === b));
@@ -385,6 +409,8 @@ $("#arquivo").addEventListener("change", async e => {
   lidos = []; $("#btGravar").disabled = true; $("#previa").innerHTML = '<div class="vazio">Lendo…</div>';
   const { data: apelidos } = await db.from("produto_apelidos").select("apelido,produto_id");
   const conhecidos = new Map((apelidos || []).map(a => [a.apelido, a.produto_id]));
+  const { data: placasCad } = await db.from("placas").select("placa");
+  const placasConhecidas = new Set((placasCad || []).map(p => p.placa));
   let html = "";
   for (const f of e.target.files) {
     const buf = await f.arrayBuffer();
@@ -404,6 +430,8 @@ $("#arquivo").addEventListener("change", async e => {
     if (r.naoLidas.length) html += `<div class="msg erro">${r.naoLidas.length} linha(s) não reconhecida(s):<br>${r.naoLidas.map(esc).join("<br>")}</div>`;
     const semMotorista = r.pesagens.filter(p => !p.motorista).length;
     if (semMotorista) html += `<div class="msg aviso">${semMotorista} de ${r.pesagens.length} carradas estão sem motorista. Combinado: nenhuma carrada sai da balança sem o nome do motorista preenchido.</div>`;
+    const placasNovas = [...new Set(r.pesagens.map(p => normPlaca(p.placa)))].filter(x => x && !placasConhecidas.has(x));
+    if (placasNovas.length) html += `<div class="msg aviso">Placa(s) sem cadastro: ${placasNovas.map(esc).join(", ")}. Pode gravar normalmente; cadastre depois em Cadastros &gt; Placas.</div>`;
     if (semProduto.length) html += `<div class="msg aviso">Nome de produto novo na balança: ${semProduto.map(esc).join(", ")}. Grave normalmente; o administrador associa em Cadastros.</div>`;
     html += tabelaPesagens(r.pesagens.map(p => ({ ...p, produto: conhecidos.get(p.produto_balanca.toLowerCase()) ? "ok" : null }))) + "</div>";
     if (!ja && r.pesagens.length) lidos.push({ nome: f.name, buf, hash, ...r });
@@ -429,6 +457,7 @@ function tabelaPesagens(ps) {
 $("#btGravar").addEventListener("click", async () => {
   $("#btGravar").disabled = true;
   let html = "";
+  const gravados = [];
   for (const r of lidos) {
     try {
       const caminho = `${r.pesagens[0].saida_em.slice(0, 7)}/${r.hash.slice(0, 16)}_${Date.now()}_${r.nome.replace(/[^\w.-]+/g, "_")}`;
@@ -456,6 +485,7 @@ $("#btGravar").addEventListener("click", async () => {
         reativadas = rv.data || 0;
       }
       const repetidas = jaExistiam.length - reativadas;
+      gravados.push({ id: imp.data.id, nome: r.nome });
       html += `<div class="msg ok">${esc(r.nome)}: ${gravadas.size + reativadas} carradas gravadas${repetidas ? `, ${repetidas} já existiam e foram ignoradas` : ""}.</div>`;
     } catch (err) {
       html += `<div class="msg erro">${esc(r.nome)}: não foi gravado. ${erroTxt(err)}</div>`;
@@ -464,37 +494,83 @@ $("#btGravar").addEventListener("click", async () => {
   limparAnexo();
   $("#previa").innerHTML = html;
   carregarFiltros(); carregarAnexos();
+  $("#conferencia").innerHTML = "";
+  for (const g of gravados) await mostrarConferencia(g.id, g.nome, true);
 });
 
 // ------------------------------------------------------------------ anexos já gravados
 const hojeBR = () => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+const um = x => Array.isArray(x) ? x[0] : x;
 async function carregarAnexos() {
   $("#anexosAjuda").textContent = papel === "admin"
-    ? "Anexou um relatório errado? Clique em Cancelar anexo e informe o motivo. O anexo e as carradas dele saem das telas e dos relatórios, e você pode anexar o arquivo de novo depois. Por segurança, ficam guardados só no backup."
-    : "Anexou um relatório errado? Você pode cancelar no mesmo dia, informando o motivo. Depois disso, peça ao administrador.";
+    ? "Quando a balança conferir e enviar um relatório, ele aparece aqui como enviado; marque como visto depois de olhar. Relatório errado: Cancelar anexo, com o motivo. O anexo e as carradas saem das telas (ficam só no backup) e o arquivo pode ser anexado de novo."
+    : "Depois de gravar, confira o resumo do dia e envie ao administrador. Relatório errado: Cancelar anexo, com o motivo, e anexe o certo.";
   const { data, error } = await db.from("importacoes")
-    .select("id,arquivo_nome,carradas_lidas,total_liquido_kg,importado_por,importado_em,importacao_cancelamentos(motivo,cancelado_em)")
-    .order("importado_em", { ascending: false }).limit(30);
+    .select("id,arquivo_nome,carradas_lidas,total_liquido_kg,importado_por,importado_em,importacao_cancelamentos(motivo),conferencias(observacao,enviado_em,conferencias_vistas(visto_em))")
+    .order("importado_em", { ascending: false }).limit(40);
   if (error) return $("#tabAnexos").innerHTML = `<div class="msg erro">${erroTxt(error)}</div>`;
-  const ativos = data.filter(i => !(Array.isArray(i.importacao_cancelamentos) ? i.importacao_cancelamentos.length : i.importacao_cancelamentos));
+  const ativos = data.filter(i => !um(i.importacao_cancelamentos));
+  const pendentes = ativos.filter(i => um(i.conferencias) && !um(um(i.conferencias).conferencias_vistas)).length;
+  const aba = document.querySelector('#abas [data-aba="anexar"]');
+  aba.textContent = papel === "admin" && pendentes ? `Anexar relatório (${pendentes} para ver)` : "Anexar relatório";
   if (!ativos.length) return $("#tabAnexos").innerHTML = '<div class="vazio">Nenhum relatório anexado ainda.</div>';
-  const hoje = hojeBR();
-  $("#tabAnexos").innerHTML = `<table><tr><th>Anexado em</th><th>Arquivo</th><th class="n">Carradas</th><th class="n">Toneladas</th><th>Situação</th><th></th></tr>` +
+  $("#tabAnexos").innerHTML = `<table><tr><th>Anexado em</th><th>Arquivo</th><th class="n">Carradas</th><th class="n">Toneladas</th><th>Conferência da balança</th><th></th></tr>` +
     ativos.map(i => {
-      const c = Array.isArray(i.importacao_cancelamentos) ? i.importacao_cancelamentos[0] : i.importacao_cancelamentos;
-      const podeCancelar = !c && (papel === "admin" ||
-        (i.importado_por === usuario.id && new Date(i.importado_em).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }) === hoje));
-      return `<tr class="${c ? "cancelada" : ""}"><td>${new Date(i.importado_em).toLocaleString("pt-BR")}</td><td>${esc(i.arquivo_nome)}</td><td class="n">${i.carradas_lidas}</td><td class="n">${ton(i.total_liquido_kg)}</td>` +
-        `<td>${c ? `cancelado: ${esc(c.motivo)}` : "gravado"}</td><td>${podeCancelar ? `<button class="mini" data-cancelar-anexo="${i.id}" data-nome="${esc(i.arquivo_nome)}">Cancelar anexo</button>` : ""}</td></tr>`;
+      const c = um(i.conferencias), v = c && um(c.conferencias_vistas);
+      const conf = !c ? '<span class="alerta">não enviada</span>'
+        : `enviada em ${new Date(c.enviado_em).toLocaleString("pt-BR")}${c.observacao ? ` (${esc(c.observacao)})` : ""}` +
+          (v ? ` · vista pelo administrador em ${new Date(v.visto_em).toLocaleString("pt-BR")}` : papel === "admin" ? ' · <b>aguardando você</b>' : "");
+      const bts = [!c ? `<button class="mini" data-conferir="${i.id}" data-nome="${esc(i.arquivo_nome)}">Conferir e enviar</button>` : "",
+        c && !v && papel === "admin" ? `<button class="mini" data-visto="${i.id}">Marcar como visto</button>` : "",
+        `<button class="mini" data-cancelar-anexo="${i.id}" data-nome="${esc(i.arquivo_nome)}">Cancelar anexo</button>`].join(" ");
+      return `<tr><td>${new Date(i.importado_em).toLocaleString("pt-BR")}</td><td>${esc(i.arquivo_nome)}</td><td class="n">${i.carradas_lidas}</td><td class="n">${ton(i.total_liquido_kg)}</td><td>${conf}</td><td>${bts}</td></tr>`;
     }).join("") + "</table>";
 }
+
+// resumo do relatório para a balança conferir e enviar ao administrador
+async function mostrarConferencia(id, nome, rolar) {
+  const { data: ps, error } = await db.from("v_pesagens").select("*").eq("importacao_id", id).eq("situacao", "valida").order("saida_em");
+  if (error) return msg("#anexosMsg", "erro", erroTxt(error));
+  const linhas = agrupar(ps || [], x => ({ id: x.data + x.cliente, v: [br(x.data), x.cliente] }));
+  const tot = (ps || []).reduce((s, x) => s + x.liquido_kg, 0);
+  const box = document.createElement("div"); box.className = "card"; box.dataset.conf = id;
+  box.innerHTML = `<h3 style="margin-top:0">Conferência: ${esc(nome)}</h3>
+    <p style="margin-top:0">Compare com o relatório da balança: a quantidade de carradas e as toneladas de cada cliente precisam ser iguais.
+      Se tudo bater, marque a caixa e envie ao administrador. Se algo não bater, cancele o anexo com o motivo e anexe o relatório certo.</p>
+    <div class="tabela"><table><tr><th>Data</th><th>Cliente</th><th class="n">Carradas</th><th class="n">Toneladas</th></tr>` +
+    linhas.map(l => `<tr><td>${l.v[0]}</td><td>${esc(l.v[1])}</td><td class="n">${l.carradas}</td><td class="n">${ton(l.kg)}</td></tr>`).join("") +
+    `<tr class="dia"><td colspan="2">TOTAL</td><td class="n">${(ps || []).length}</td><td class="n">${ton(tot)}</td></tr></table></div>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin:12px 0;font-size:14px;color:var(--texto)"><input type="checkbox" data-ok style="min-width:0"> Conferi e os números batem com a balança</label>
+    <div class="linha"><label style="flex:1">Observação para o administrador (opcional) <input data-obs style="width:100%"></label>
+      <button class="bt" data-enviar-conf="${id}" disabled>Enviar ao administrador</button></div>`;
+  box.querySelector("[data-ok]").addEventListener("change", e => box.querySelector("[data-enviar-conf]").disabled = !e.target.checked);
+  box.querySelector("[data-enviar-conf]").addEventListener("click", async () => {
+    const { error } = await db.from("conferencias").insert({ importacao_id: id, observacao: box.querySelector("[data-obs]").value.trim() || null, enviado_por: usuario.id });
+    if (error) return msg("#anexosMsg", "erro", /duplicate|unique/i.test(error.message) ? "Este relatório já foi enviado." : erroTxt(error));
+    box.remove(); msg("#anexosMsg", "ok", `Conferência de ${esc(nome)} enviada ao administrador.`); carregarAnexos();
+  });
+  $("#conferencia").appendChild(box);
+  if (rolar) box.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 $("#tabAnexos").addEventListener("click", async e => {
+  if (e.target.dataset.conferir) {
+    const id = Number(e.target.dataset.conferir);
+    if (!document.querySelector(`[data-conf="${id}"]`)) await mostrarConferencia(id, e.target.dataset.nome, true);
+    return;
+  }
+  if (e.target.dataset.visto) {
+    const { error } = await db.from("conferencias_vistas").insert({ importacao_id: Number(e.target.dataset.visto), visto_por: usuario.id });
+    if (error) return msg("#anexosMsg", "erro", erroTxt(error));
+    return carregarAnexos();
+  }
   const id = e.target.dataset.cancelarAnexo; if (!id) return;
   const motivo = prompt(`Cancelar o anexo "${e.target.dataset.nome}"?\nAs carradas que entraram por ele saem dos relatórios.\n\nMotivo:`);
   if (!motivo || !motivo.trim()) return;
   const { data, error } = await db.rpc("cancelar_importacao", { p_id: Number(id), p_motivo: motivo.trim() });
   if (error) return msg("#anexosMsg", "erro", erroTxt(error));
   msg("#anexosMsg", "ok", `Anexo cancelado. ${data} carrada(s) saíram dos relatórios.`);
+  document.querySelector(`[data-conf="${id}"]`)?.remove();
   carregarAnexos(); carregarFiltros();
 });
 
@@ -827,10 +903,17 @@ $("#tabEnvio").addEventListener("click", async e => {
 $("#btEnvio").addEventListener("click", carregarEnvio);
 
 // ------------------------------------------------------------------ cadastros (administrador)
+const normPlaca = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 async function carregarCadastros() {
-  const [{ data: ap }, { data: pr }, { data: cl }, { data: us }] = await Promise.all([
+  const [{ data: ap }, { data: pr }, { data: cl }, { data: us }, { data: pl }] = await Promise.all([
     db.from("produto_apelidos").select("*").order("apelido"), db.from("produtos").select("*").order("nome"),
-    db.from("clientes").select("*").order("nome"), db.from("perfis").select("*").order("email")]);
+    db.from("clientes").select("*").order("nome"), db.from("perfis").select("*").order("email"),
+    db.from("placas").select("*").order("placa")]);
+  const opCli = sel => '<option value="">—</option>' + (cl || []).map(c => `<option value="${c.id}" ${c.id === sel ? "selected" : ""}>${esc(c.nome)}</option>`).join("");
+  $("#npCliente").innerHTML = opCli(null);
+  $("#tabPlacas").innerHTML = (pl || []).length ? `<table><tr><th>Placa</th><th>Cliente</th><th>Motorista</th><th>Transportador</th><th>Observação</th><th></th></tr>` +
+    pl.map(p => `<tr><td><b>${esc(p.placa)}</b></td><td><select data-campo="cliente_id">${opCli(p.cliente_id)}</select></td><td><input value="${esc(p.motorista)}" data-campo="motorista"></td><td><input value="${esc(p.transportador)}" data-campo="transportador"></td><td><input value="${esc(p.observacao)}" data-campo="observacao"></td><td><button class="mini" data-salvar-placa="${esc(p.placa)}">Salvar</button></td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Nenhuma placa cadastrada ainda.</div>';
   const opcoes = sel => '<option value="">— escolher —</option>' + (pr || []).filter(p => p.ativo).map(p => `<option value="${p.id}" ${p.id === sel ? "selected" : ""}>${esc(p.nome)}</option>`).join("");
   $("#tabApelidos").innerHTML = `<table><tr><th>Nome na balança</th><th>Produto do sistema</th></tr>` +
     (ap || []).map(a => `<tr><td>${esc(a.apelido)}</td><td><select data-apelido="${esc(a.apelido)}">${opcoes(a.produto_id)}</select>${a.produto_id ? "" : ' <span class="alerta">sem associação</span>'}</td></tr>`).join("") + "</table>";
@@ -856,6 +939,31 @@ $("#btNovoProduto").addEventListener("click", async () => {
   const { error } = await db.from("produtos").insert({ nome });
   if (error) alert(error.message); $("#novoProduto").value = ""; carregarCadastros(); carregarFiltros();
 });
+$("#btNovoCliente").addEventListener("click", async () => {
+  const nome_balanca = $("#ncBalanca").value.trim(), nome = $("#ncNome").value.trim() || nome_balanca;
+  if (!nome_balanca) return msg("#clienteMsg", "erro", "Informe o nome como sai na balança.");
+  const { error } = await db.from("clientes").insert({ nome_balanca, nome, cpf_cnpj: $("#ncDoc").value.trim() || null, telefone: $("#ncFone").value.trim() || null });
+  if (error) return msg("#clienteMsg", "erro", /duplicate|unique/i.test(error.message) ? "Esse cliente já está cadastrado." : erroTxt(error));
+  ["#ncBalanca", "#ncNome", "#ncDoc", "#ncFone"].forEach(i => $(i).value = "");
+  msg("#clienteMsg", "ok", "Cliente adicionado."); carregarCadastros(); carregarFiltros();
+});
+$("#btNovaPlaca").addEventListener("click", async () => {
+  const placa = normPlaca($("#npPlaca").value);
+  if (!placa) return msg("#placaMsg", "erro", "Informe a placa.");
+  const { error } = await db.from("placas").insert({ placa, cliente_id: $("#npCliente").value ? Number($("#npCliente").value) : null,
+    motorista: $("#npMotorista").value.trim() || null, transportador: $("#npTransp").value.trim() || null });
+  if (error) return msg("#placaMsg", "erro", /duplicate|unique/i.test(error.message) ? "Essa placa já está cadastrada." : erroTxt(error));
+  ["#npPlaca", "#npMotorista", "#npTransp"].forEach(i => $(i).value = "");
+  msg("#placaMsg", "ok", `Placa ${placa} adicionada.`); carregarCadastros();
+});
+$("#tabPlacas").addEventListener("click", async e => {
+  const placa = e.target.dataset.salvarPlaca; if (!placa) return;
+  const dados = {};
+  e.target.closest("tr").querySelectorAll("[data-campo]").forEach(i => dados[i.dataset.campo] = i.value.trim() || null);
+  dados.cliente_id = dados.cliente_id ? Number(dados.cliente_id) : null;
+  const { error } = await db.from("placas").update(dados).eq("placa", placa);
+  if (error) alert(error.message); else e.target.textContent = "Salvo";
+});
 $("#tabClientes").addEventListener("click", async e => {
   const id = e.target.dataset.salvar; if (!id) return;
   const tr = e.target.closest("tr"), dados = {};
@@ -869,7 +977,7 @@ $("#tabClientes").addEventListener("click", async e => {
 $("#btBackup").addEventListener("click", async () => {
   msg("#backupMsg", "aviso", "Gerando backup…");
   try {
-    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "auditoria"];
+    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "auditoria"];
     const dados = {};
     for (const t of tabelas) {
       dados[t] = [];
