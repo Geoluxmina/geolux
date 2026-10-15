@@ -477,13 +477,33 @@ $("#arquivo").addEventListener("change", async e => {
     const ja = (anteriores || []).find(i => !cancelado(i)), jaCancelado = (anteriores || []).find(cancelado);
     let r;
     try { r = await lerPdf(buf.slice(0)); } catch (err) { html += `<div class="msg erro">${esc(f.name)}: não foi possível ler o PDF (${erroTxt(err)}).</div>`; continue; }
+    // carradas repetidas: mesmo tiquete, ou mesma placa com as mesmas horas e pesos; fica só a primeira
+    const vistos = new Set(), repetidas = [];
+    const unicas = r.pesagens.filter(p => {
+      const ch = [`t${p.ticket}`, `c${normPlaca(p.placa)}|${p.entrada_em}|${p.saida_em}|${p.peso_entrada_kg}|${p.peso_saida_kg}`];
+      if (ch.some(c => vistos.has(c))) { repetidas.push(p); return false; }
+      ch.forEach(c => vistos.add(c)); return true;
+    });
+    // carradas que já estão valendo no sistema (vieram de outro relatório)
+    const { data: existentes } = await db.from("pesagens").select("ticket").in("ticket", unicas.map(p => p.ticket)).eq("situacao", "valida");
+    const jaNoSistema = new Set((existentes || []).map(x => x.ticket));
+    const novas = unicas.filter(p => !jaNoSistema.has(p.ticket));
     const semProduto = [...new Set(r.pesagens.map(p => p.produto_balanca))].filter(n => !conhecidos.get(n.toLowerCase()));
     html += `<div class="card"><h3 style="margin:0 0 6px">${esc(f.name)}</h3>`;
     if (ja) html += `<div class="msg aviso">Este arquivo já foi anexado em ${new Date(ja.importado_em).toLocaleString("pt-BR")}. Nada será gravado de novo. Se quiser anexar de novo, cancele antes o anexo anterior.</div>`;
     else if (jaCancelado) html += `<div class="msg ok">Este arquivo já foi anexado e cancelado. Pode gravar de novo: as carradas dele voltam a valer.</div>`;
-    html += r.confere
+    const somaUnicas = unicas.reduce((s, p) => s + p.liquido_kg, 0);
+    if (!r.confere && repetidas.length && r.totais && r.totais.carradas === unicas.length && r.totais.liquido === somaUnicas) {
+      r.confere = true;
+      html += `<div class="msg ok">${unicas.length} carradas, ${ton(somaUnicas)} t: depois de tirar as repetidas, os totais conferem com o rodapé do relatório.</div>`;
+    } else html += r.confere
       ? `<div class="msg ok">${r.soma.carradas} carradas lidas, ${ton(r.soma.liquido)} t. Os totais conferem com o rodapé do relatório.</div>`
       : `<div class="msg erro">Atenção: a leitura não bate com os totais do relatório (lido: ${r.soma.carradas} carradas, ${kg(r.soma.liquido)} kg; relatório: ${r.totais ? r.totais.carradas + " carradas, " + kg(r.totais.liquido) + " kg" : "sem totais"}). Confira antes de gravar.</div>`;
+    if (repetidas.length) html += `<div class="msg aviso"><b>${repetidas.length} carrada(s) repetida(s) dentro deste relatório</b> (tiquete ${repetidas.map(p => p.ticket).join(", ")}). Cada uma será gravada uma vez só.</div>`;
+    if (jaNoSistema.size) html += `<div class="msg aviso"><b>${jaNoSistema.size} carrada(s) já estão no sistema</b> por outro relatório (tiquete ${[...jaNoSistema].join(", ")}). Elas não serão gravadas de novo.</div>`;
+    if (repetidas.length || jaNoSistema.size) html += `<div class="msg ok">Serão consideradas <b>${novas.length} carrada(s) novas, ${ton(novas.reduce((s, p) => s + p.liquido_kg, 0))} t</b>.</div>`;
+    r.pesagens = unicas;
+    r.soma = { ...r.soma, carradas: unicas.length, liquido: unicas.reduce((s, p) => s + p.liquido_kg, 0) };
     if (r.naoLidas.length) html += `<div class="msg erro">${r.naoLidas.length} linha(s) não reconhecida(s):<br>${r.naoLidas.map(esc).join("<br>")}</div>`;
     const semMotorista = r.pesagens.filter(p => !p.motorista).length;
     if (semMotorista) html += `<div class="msg aviso">${semMotorista} de ${r.pesagens.length} carradas estão sem motorista. Combinado: nenhuma carrada sai da balança sem o nome do motorista preenchido.</div>`;
