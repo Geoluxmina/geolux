@@ -51,6 +51,16 @@
   #login { max-width:360px; margin:60px auto; }
   #login h2 { color:var(--azul); margin:0 0 4px; }
   .escondido { display:none !important; }
+  .painel-grade { display:grid; grid-template-columns:2fr 1fr; gap:16px; }
+  .kpi .delta { display:block; font-size:12px; color:var(--suave); margin-top:2px; }
+  .barra { height:10px; background:var(--azul); border-radius:0 4px 4px 0; }
+  .grafico { position:relative; }
+  .grafico svg { width:100%; height:auto; display:block; }
+  .grafico rect.alvo { fill:transparent; cursor:default; }
+  .dica { position:absolute; pointer-events:none; background:#fff; border:1px solid var(--borda); border-radius:6px; padding:6px 9px; font-size:12px; box-shadow:0 2px 8px rgba(0,0,0,.12); white-space:nowrap; display:none; }
+  .lista-alertas { margin:0; padding-left:18px; }
+  .lista-alertas li { margin:4px 0; }
+  @media (max-width:900px){ .painel-grade{ grid-template-columns:1fr; } }
   @media (max-width:640px){ main{padding:12px;} .kpi{min-width:calc(50% - 6px);} }
 </style>
 </head>
@@ -85,6 +95,7 @@
 
 <div id="app" class="escondido">
   <nav id="abas">
+    <button data-aba="painel" data-admin>Painel</button>
     <button data-aba="anexar" class="ativo">Anexar relatório</button>
     <button data-aba="relatorios">Relatórios</button>
     <button data-aba="conferir" data-admin>A conferir</button>
@@ -93,6 +104,35 @@
     <button data-aba="fechamento" data-admin>Backup</button>
   </nav>
   <main>
+    <!-- PAINEL (administrador) -->
+    <section id="aba-painel" class="escondido">
+      <div class="card linha">
+        <label>Mês <input type="month" id="pMes"></label>
+        <button class="bt" id="btPainel">Atualizar</button>
+      </div>
+      <div class="kpis" id="pKpis"></div>
+      <div class="painel-grade">
+        <div class="card">
+          <h3 style="margin-top:0">Toneladas por dia</h3>
+          <div class="grafico" id="pDias"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Atenção</h3>
+          <ul class="lista-alertas" id="pAlertas"></ul>
+        </div>
+      </div>
+      <div class="painel-grade">
+        <div class="card">
+          <h3 style="margin-top:0">Clientes do mês</h3>
+          <div class="tabela" id="pClientes"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Por produto</h3>
+          <div class="tabela" id="pProdutos"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ANEXAR -->
     <section id="aba-anexar">
       <div class="card">
@@ -382,8 +422,10 @@ async function iniciar() {
   const seg = new Date(segundaDaSemana(hoje) + "T12:00:00"); seg.setDate(seg.getDate() - 7);
   const dom = new Date(seg); dom.setDate(dom.getDate() + 6);
   $("#eDe").value = iso(seg); $("#eAte").value = iso(dom);
+  $("#pMes").value = hoje.slice(0, 7);
   await carregarFiltros();
   carregarAnexos();
+  if (papel === "admin") document.querySelector('#abas [data-aba="painel"]').click();
 }
 $("#formLogin").addEventListener("submit", async e => {
   e.preventDefault();
@@ -400,6 +442,7 @@ document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click
   if (b.dataset.aba === "cadastros") carregarCadastros();
   if (b.dataset.aba === "conferir") mostrarConferir();
   if (b.dataset.aba === "anexar") carregarAnexos();
+  if (b.dataset.aba === "painel") carregarPainel();
   if (b.dataset.aba === "envio") carregarEnvio();
 }));
 
@@ -973,6 +1016,97 @@ $("#tabClientes").addEventListener("click", async e => {
   if (error) alert(error.message); else { e.target.textContent = "Salvo"; carregarFiltros(); }
 });
 
+// ------------------------------------------------------------------ painel (administrador)
+function lerLocal(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function gravarLocal(k, v) { try { localStorage.setItem(k, v); } catch {} }
+async function carregarPainel() {
+  const mes = $("#pMes").value || iso(new Date()).slice(0, 7);
+  const [a, m] = mes.split("-").map(Number);
+  const de = `${mes}-01`, ate = iso(new Date(a, m, 0));
+  const deAnt = iso(new Date(a, m - 2, 1)), ateAnt = iso(new Date(a, m - 1, 0));
+  $("#pKpis").innerHTML = '<div class="vazio">Carregando…</div>';
+  let ps, ant, imps;
+  try {
+    [ps, ant, { data: imps }] = await Promise.all([buscar(de, ate), buscar(deAnt, ateAnt),
+      db.from("importacoes").select("id,importacao_cancelamentos(motivo),conferencias(enviado_em,conferencias_vistas(visto_em))").order("importado_em", { ascending: false }).limit(60)]);
+  } catch (e) { return $("#pKpis").innerHTML = `<div class="msg erro">${erroTxt(e)}</div>`; }
+  const kgT = ps.reduce((s, x) => s + x.liquido_kg, 0), kgA = ant.reduce((s, x) => s + x.liquido_kg, 0);
+  const hoje = iso(new Date()), fimContagem = ate < hoje ? ate : hoje;
+  // comparação justa: mês anterior até o mesmo dia
+  const diaHoje = mes === hoje.slice(0, 7) ? Number(hoje.slice(8)) : 31;
+  const kgAmesmo = ant.filter(x => Number(x.data.slice(8)) <= diaHoje).reduce((s, x) => s + x.liquido_kg, 0);
+  const delta = (v, b) => !b ? "sem base de comparação" : `${v >= b ? "▲" : "▼"} ${Math.abs((v / b - 1) * 100).toFixed(0)}% vs. mesmo período do mês anterior`;
+  const diasMov = new Set(ps.map(x => x.data)).size;
+  $("#pKpis").innerHTML = [
+    ["Toneladas no mês", ton(kgT) + " t", delta(kgT, kgAmesmo)],
+    ["Carradas", ps.length, `mês anterior inteiro: ${ant.length}`],
+    ["Média por dia com movimento", diasMov ? ton(kgT / diasMov) + " t" : "—", `${diasMov} dia(s) com carradas`],
+    ["Clientes atendidos", new Set(ps.map(x => x.cliente)).size, `mês anterior: ${new Set(ant.map(x => x.cliente)).size}`],
+    ["Mês anterior", ton(kgA) + " t", `${ant.length} carradas`]]
+    .map(([t, v, d]) => `<div class="kpi"><small>${t}</small><b>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
+
+  // toneladas por dia (barras)
+  const nDias = new Date(a, m, 0).getDate(), porDia = Array(nDias).fill(0), carDia = Array(nDias).fill(0);
+  ps.forEach(x => { const d = Number(x.data.slice(8)) - 1; porDia[d] += x.liquido_kg; carDia[d]++; });
+  const W = 640, H = 220, ml = 44, mb = 22, mt = 8, larg = (W - ml - 8) / nDias, max = Math.max(...porDia, 1);
+  const passo = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].find(p => max / 1000 / p <= 5) || 1000;
+  const topo = Math.ceil(max / 1000 / passo) * passo * 1000 || 1000, y = v => mt + (H - mt - mb) * (1 - v / topo);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Toneladas por dia">`;
+  for (let v = 0; v <= topo; v += passo * 1000) svg += `<line x1="${ml}" x2="${W - 8}" y1="${y(v)}" y2="${y(v)}" stroke="#eceef2"/><text x="${ml - 6}" y="${y(v) + 4}" font-size="10" text-anchor="end" fill="#667085">${(v / 1000).toLocaleString("pt-BR")}</text>`;
+  porDia.forEach((v, i) => {
+    const x = ml + i * larg + 1, w = Math.max(larg - 2, 1);
+    if (v) svg += `<path d="M${x},${y(0)} V${y(v) + 3} q0,-3 3,-3 H${x + w - 3} q3,0 3,3 V${y(0)} Z" fill="#1F3A5F"/>`;
+    if ((i + 1) % 5 === 0 || i === 0) svg += `<text x="${x + w / 2}" y="${H - 6}" font-size="10" text-anchor="middle" fill="#667085">${i + 1}</text>`;
+    svg += `<rect class="alvo" x="${ml + i * larg}" y="${mt}" width="${larg}" height="${H - mt - mb}" data-i="${i}"/>`;
+  });
+  svg += `<line x1="${ml}" x2="${W - 8}" y1="${y(0)}" y2="${y(0)}" stroke="#98a2b3"/></svg><div class="dica"></div>`;
+  $("#pDias").innerHTML = ps.length ? svg : '<div class="vazio">Nenhuma carrada neste mês.</div>';
+  const dica = $("#pDias .dica");
+  $("#pDias").onmousemove = e => {
+    const i = e.target.dataset?.i; if (i === undefined) return dica && (dica.style.display = "none");
+    const caixa = $("#pDias").getBoundingClientRect();
+    dica.innerHTML = `<b>${String(Number(i) + 1).padStart(2, "0")}/${mes.slice(5)}</b><br>${ton(porDia[i])} t · ${carDia[i]} carradas`;
+    dica.style.display = "block"; dica.style.left = Math.min(e.clientX - caixa.left + 12, caixa.width - 150) + "px"; dica.style.top = (e.clientY - caixa.top - 40) + "px";
+  };
+  $("#pDias").onmouseleave = () => dica && (dica.style.display = "none");
+
+  // ranking de clientes e produtos
+  const tabelaRank = (chave, rot) => {
+    const g = agrupar(ps, x => ({ id: chave(x), v: [chave(x)] })).sort((p, q) => q.kg - p.kg);
+    if (!g.length) return '<div class="vazio">—</div>';
+    const maior = g[0].kg;
+    return `<table><tr><th>${rot}</th><th class="n">Carradas</th><th class="n">Toneladas</th><th style="width:30%"></th><th class="n">%</th></tr>` +
+      g.map(l => `<tr><td>${esc(l.v[0])}</td><td class="n">${l.carradas}</td><td class="n">${ton(l.kg)}</td><td><div class="barra" style="width:${Math.max(l.kg / maior * 100, 1)}%"></div></td><td class="n">${(l.kg / kgT * 100).toFixed(1).replace(".", ",")}%</td></tr>`).join("") + "</table>";
+  };
+  $("#pClientes").innerHTML = tabelaRank(x => x.cliente, "Cliente");
+  $("#pProdutos").innerHTML = tabelaRank(x => x.produto || x.produto_balanca, "Produto");
+
+  // atenção
+  const al = [];
+  // conta só a partir da primeira carrada já gravada no sistema
+  const { data: prim } = await db.from("pesagens").select("saida_em").order("saida_em").limit(1);
+  const inicio = prim && prim[0] ? prim[0].saida_em.slice(0, 10) : fimContagem;
+  const comMov = new Set(ps.map(x => x.data)), semRel = [];
+  for (let d = new Date((inicio > de ? inicio : de) + "T12:00:00"); iso(d) < fimContagem; d.setDate(d.getDate() + 1))
+    if (d.getDay() !== 0 && !comMov.has(iso(d))) semRel.push(br(iso(d)).slice(0, 5));
+  if (semRel.length) al.push(`<b>${semRel.length} dia(s) de segunda a sábado sem relatório anexado:</b> ${semRel.join(", ")}. Se teve expedição, falta anexar.`);
+  const ativos = (imps || []).filter(i => !um(i.importacao_cancelamentos));
+  const semConf = ativos.filter(i => !um(i.conferencias)).length;
+  const paraVer = ativos.filter(i => um(i.conferencias) && !um(um(i.conferencias).conferencias_vistas)).length;
+  if (paraVer) al.push(`<b>${paraVer} conferência(s) da balança</b> aguardando você na aba Anexar relatório.`);
+  if (semConf) al.push(`${semConf} relatório(s) anexado(s) que a balança ainda não conferiu.`);
+  const semMot = ps.filter(x => !x.motorista).length;
+  if (semMot) al.push(`${semMot} carrada(s) do mês sem motorista (${Math.round(semMot / ps.length * 100)}%).`);
+  const conferir = ps.filter(alertas).length;
+  if (conferir) al.push(`${conferir} carrada(s) com algo a conferir (aba A conferir).`);
+  const ultimo = lerLocal("geolux_ultimo_backup");
+  const diasBk = ultimo ? Math.floor((Date.now() - Number(ultimo)) / 86400000) : null;
+  if (diasBk === null || diasBk >= 7) al.push(`<b>Backup:</b> ${diasBk === null ? "nenhum backup baixado neste computador" : `último backup há ${diasBk} dias`}. Baixe na aba Backup.`);
+  $("#pAlertas").innerHTML = al.length ? al.map(x => `<li>${x}</li>`).join("") : "<li>Tudo em dia.</li>";
+}
+$("#btPainel").addEventListener("click", carregarPainel);
+$("#pMes").addEventListener("change", carregarPainel);
+
 // ------------------------------------------------------------------ backup (administrador)
 $("#btBackup").addEventListener("click", async () => {
   msg("#backupMsg", "aviso", "Gerando backup…");
@@ -998,6 +1132,7 @@ $("#btBackup").addEventListener("click", async () => {
       for (const r of dados[t]) ws.addRow(cols.map(c => r[c] !== null && typeof r[c] === "object" ? JSON.stringify(r[c]) : r[c]));
     }
     baixar(new Blob([await wb.xlsx.writeBuffer()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `Geolux_backup_${carimbo}.xlsx`);
+    gravarLocal("geolux_ultimo_backup", String(Date.now()));
     msg("#backupMsg", "ok", `Backup gerado: ${dados.pesagens.length} carradas, ${dados.clientes.length} clientes, ${dados.importacoes.length} relatórios anexados.`);
   } catch (e) { msg("#backupMsg", "erro", "Não foi possível gerar o backup. " + erroTxt(e)); }
 });
