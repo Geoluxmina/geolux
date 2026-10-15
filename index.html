@@ -95,7 +95,7 @@
 
 <div id="app" class="escondido">
   <nav id="abas">
-    <button data-aba="painel" data-admin>Painel</button>
+    <button data-aba="painel">Painel</button>
     <button data-aba="anexar" class="ativo">Anexar relatório</button>
     <button data-aba="relatorios">Relatórios</button>
     <button data-aba="conferir" data-admin>A conferir</button>
@@ -104,7 +104,7 @@
     <button data-aba="fechamento" data-admin>Backup</button>
   </nav>
   <main>
-    <!-- PAINEL (administrador) -->
+    <!-- PAINEL (os dois usuários) -->
     <section id="aba-painel" class="escondido">
       <div class="card linha">
         <label>De <input type="date" id="pDe"></label>
@@ -1172,7 +1172,7 @@ async function carregarPainel() {
   const ativos = (imps || []).filter(i => !um(i.importacao_cancelamentos));
   const semConf = ativos.filter(i => !um(i.conferencias)).length;
   const paraVer = ativos.filter(i => um(i.conferencias) && !um(um(i.conferencias).conferencias_vistas)).length;
-  if (paraVer) al.push(`<b>${paraVer} conferência(s) da balança</b> aguardando você na aba Anexar relatório.`);
+  if (paraVer && papel === "admin") al.push(`<b>${paraVer} conferência(s) da balança</b> aguardando você na aba Anexar relatório.`);
   if (semConf) al.push(`${semConf} relatório(s) anexado(s) que a balança ainda não conferiu.`);
   const semMot = ps.filter(x => !x.motorista).length;
   if (semMot) al.push(`${semMot} carrada(s) do período sem motorista (${Math.round(semMot / ps.length * 100)}%).`);
@@ -1180,7 +1180,7 @@ async function carregarPainel() {
   if (conferir) al.push(`${conferir} carrada(s) com algo a conferir (aba A conferir).`);
   const ultimo = lerLocal("geolux_ultimo_backup");
   const diasBk = ultimo ? Math.floor((Date.now() - Number(ultimo)) / 86400000) : null;
-  if (diasBk === null || diasBk >= 7) al.push(`<b>Backup:</b> ${diasBk === null ? "nenhum backup baixado neste computador" : `último backup há ${diasBk} dias`}. Baixe na aba Backup.`);
+  if (papel === "admin" && (diasBk === null || diasBk >= 7)) al.push(`<b>Backup:</b> ${diasBk === null ? "nenhum backup baixado neste computador" : `último backup há ${diasBk} dias`}. Baixe na aba Backup.`);
   $("#pAlertas").innerHTML = al.length ? al.map(x => `<li>${x}</li>`).join("") : "<li>Tudo em dia.</li>";
 }
 $("#btPainel").addEventListener("click", carregarPainel);
