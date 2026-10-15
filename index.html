@@ -119,7 +119,9 @@
         </label>
         <label>Cliente <select id="pCliente"><option value="">Todos</option></select></label>
         <button class="bt" id="btPainel">Atualizar</button>
+        <button class="bt sec" id="btPainelPdf">Extrato do período (PDF)</button>
       </div>
+      <div id="pMsg"></div>
       <p id="pPeriodo" style="margin:-4px 0 0;color:var(--suave)"></p>
       <div class="kpis" id="pKpis"></div>
       <div class="painel-grade">
@@ -135,7 +137,7 @@
       <div class="painel-grade">
         <div class="card">
           <h3 style="margin-top:0">Total por cliente no período</h3>
-          <p style="margin-top:0;color:var(--suave);font-size:13px">Clique num cliente para ver só os números dele.</p>
+          <p style="margin-top:0;color:var(--suave);font-size:13px">Clique num cliente para ver só os números dele. O botão PDF gera o extrato daquele cliente no período, para prestar contas.</p>
           <div class="tabela" id="pClientes"></div>
         </div>
         <div class="card">
@@ -828,8 +830,8 @@ function nomeComprovante(de, ate, sufixo) {
   return `${de === ate ? "RET-" + de.replace(/-/g, "") : "EXT-" + de.replace(/-/g, "") + "-" + ate.replace(/-/g, "")}${sufixo}.pdf`;
 }
 
-function paginaComprovante(doc, ps, cad) {
-  const de = ps[0].data, ate = ps[ps.length - 1].data, umDia = de === ate;
+function paginaComprovante(doc, ps, cad, periodo) {
+  const de = periodo?.de || ps[0].data, ate = periodo?.ate || ps[ps.length - 1].data, umDia = de === ate;
   const cliente = ps[0].cliente;
   const numero = `${umDia ? "RET-" + de.replace(/-/g, "") : "EXT-" + de.replace(/-/g, "") + "-" + ate.replace(/-/g, "")}-${cliente.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12)}`;
   const azul = [31, 58, 95], W = 297, M = 10;
@@ -857,13 +859,13 @@ function paginaComprovante(doc, ps, cad) {
   if (cad?.cpf_cnpj) { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(80); doc.text(`CPF/CNPJ ${cad.cpf_cnpj}`, M + 2.5, 50); }
   doc.autoTable({
     startY: 55, margin: { left: M, right: M, bottom: 14 },
-    head: [["#", "Tiquete", "Placa", "Motorista", "Produto", "Nº Nota", "Entrada", "Saída", "Tara (kg)", "Bruto (kg)", "Líquido (kg)", "Observação"]],
-    body: ps.map((p, i) => [i + 1, p.ticket, p.placa, p.motorista || "não informado", p.produto || p.produto_balanca, p.nota || "—", brHora(p.entrada_em), brHora(p.saida_em), kg(p.peso_entrada_kg), kg(p.peso_saida_kg), kg(p.liquido_kg), alertas(p)]),
-    foot: [["", "TOTAL", `${ps.length} carradas`, "", "", "", "", "", kg(ps.reduce((s, p) => s + p.peso_entrada_kg, 0)), kg(ps.reduce((s, p) => s + p.peso_saida_kg, 0)), kg(total), ""]],
+    head: [["#", "Tiquete", "Placa", "Motorista", "Produto", "Nº Nota", "Entrada", "Saída", "Tara (kg)", "Bruto (kg)", "Líquido (kg)"]],
+    body: ps.map((p, i) => [i + 1, p.ticket, p.placa, p.motorista || "não informado", p.produto || p.produto_balanca, p.nota || "—", brHora(p.entrada_em), brHora(p.saida_em), kg(p.peso_entrada_kg), kg(p.peso_saida_kg), kg(p.liquido_kg)]),
+    foot: [["", "TOTAL", `${ps.length} carradas`, "", "", "", "", "", kg(ps.reduce((s, p) => s + p.peso_entrada_kg, 0)), kg(ps.reduce((s, p) => s + p.peso_saida_kg, 0)), kg(total)]],
     styles: { fontSize: 7.5, cellPadding: 1.6 }, headStyles: { fillColor: azul, textColor: 255 },
     footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" },
     alternateRowStyles: { fillColor: [244, 245, 247] },
-    columnStyles: { 8: { halign: "right" }, 9: { halign: "right" }, 10: { halign: "right", fontStyle: "bold" }, 11: { textColor: [156, 87, 0], fontSize: 6.5, cellWidth: 50 } },
+    columnStyles: { 8: { halign: "right" }, 9: { halign: "right" }, 10: { halign: "right", fontStyle: "bold" } },
     didDrawPage: d => { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(130);
       doc.text(`${numero} · emitido em ${new Date().toLocaleString("pt-BR")}`, M, 205);
       doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 205, { align: "right" }); },
@@ -1046,6 +1048,20 @@ function aplicarAtalhoPainel(a) {
 }
 const diasEntre = (a, b) => Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
 const somaDias = (s, n) => { const d = new Date(s + "T12:00:00"); d.setDate(d.getDate() + n); return iso(d); };
+let painelAtual = null;
+// extrato em PDF do período exibido no painel: um cliente ou todos (uma página por cliente)
+async function extratoPainel(cliente) {
+  if (!painelAtual) return;
+  const { todos, de, ate } = painelAtual;
+  const ps = cliente ? todos.filter(x => x.cliente === cliente) : todos;
+  if (!ps.length) return msg("#pMsg", "aviso", "Não há carradas no período para gerar o extrato.");
+  const { data: cls } = await db.from("clientes").select("nome,nome_balanca,cpf_cnpj");
+  const doc = new jspdf.jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const clientes = [...new Set(ps.map(p => p.cliente))].sort();
+  clientes.forEach((c, i) => { if (i) doc.addPage(); paginaComprovante(doc, ps.filter(p => p.cliente === c), (cls || []).find(x => x.nome === c), { de, ate }); });
+  doc.save(nomeComprovante(de, ate, clientes.length === 1 ? "_" + clientes[0].replace(/[^\w]+/g, "") : "_todos_clientes"));
+  msg("#pMsg", "ok", `Extrato de ${br(de)} a ${br(ate)} gerado: ${clientes.length === 1 ? esc(clientes[0]) : clientes.length + " clientes, uma página para cada"}.`);
+}
 async function carregarPainel() {
   $("#pKpis").innerHTML = '<div class="vazio">Carregando…</div>';
   // "desde o início" começa na primeira carrada gravada
@@ -1054,6 +1070,7 @@ async function carregarPainel() {
   if (!$("#pDe").value) $("#pDe").value = primeiraData;
   let de = $("#pDe").value, ate = $("#pAte").value || iso(new Date());
   if (de > ate) [de, ate] = [ate, de];
+  painelAtual = null;
   const n = diasEntre(de, ate) + 1, ateAnt = somaDias(de, -1), deAnt = somaDias(de, -n);
   let todos, todosAnt, imps;
   try {
@@ -1063,6 +1080,7 @@ async function carregarPainel() {
   // lista de clientes do filtro: os do período
   const cliSel = $("#pCliente").value, nomes = [...new Set(todos.map(x => x.cliente))].sort();
   $("#pCliente").innerHTML = '<option value="">Todos</option>' + nomes.map(c => `<option ${c === cliSel ? "selected" : ""}>${esc(c)}</option>`).join("");
+  painelAtual = { todos, de, ate };
   const ps = cliSel ? todos.filter(x => x.cliente === cliSel) : todos, ant = cliSel ? todosAnt.filter(x => x.cliente === cliSel) : todosAnt;
   const kgT = ps.reduce((s, x) => s + x.liquido_kg, 0), kgA = ant.reduce((s, x) => s + x.liquido_kg, 0);
   $("#pPeriodo").innerHTML = `<b>${cliSel ? esc(cliSel) : "Todos os clientes"}</b> · de ${br(de)} a ${br(ate)} (${n} dia${n > 1 ? "s" : ""}). ` +
@@ -1115,10 +1133,10 @@ async function carregarPainel() {
   const antPor = new Map(agrupar(todosAnt, x => ({ id: x.cliente, v: [] })).map(l => [l.id, l.kg]));
   const datas = c => { const d = todos.filter(x => x.cliente === c).map(x => x.data); return `${br(d[0]).slice(0, 5)} a ${br(d[d.length - 1]).slice(0, 5)}`; };
   $("#pClientes").innerHTML = !g.length ? '<div class="vazio">—</div>' :
-    `<table><tr><th>Cliente</th><th class="n">Carradas</th><th class="n">Toneladas</th><th style="width:22%"></th><th class="n">%</th><th>Retiradas</th><th class="n">Período anterior</th></tr>` +
+    `<table><tr><th>Cliente</th><th class="n">Carradas</th><th class="n">Toneladas</th><th style="width:22%"></th><th class="n">%</th><th>Retiradas</th><th class="n">Período anterior</th><th></th></tr>` +
     g.map(l => { const a = antPor.get(l.id) || 0, sel = l.id === cliSel;
-      return `<tr data-pcliente="${esc(l.id)}" style="cursor:pointer${sel ? ";outline:2px solid var(--azul)" : ""}"><td>${esc(l.id)}</td><td class="n">${l.carradas}</td><td class="n"><b>${ton(l.kg)}</b></td><td><div class="barra" style="width:${Math.max(l.kg / maior * 100, 1)}%"></div></td><td class="n">${(l.kg / kgTodos * 100).toFixed(1).replace(".", ",")}%</td><td>${datas(l.id)}</td><td class="n">${a ? ton(a) + " t" : "—"}</td></tr>`; }).join("") +
-    `<tr class="dia"><td>TOTAL GERAL</td><td class="n">${todos.length}</td><td class="n">${ton(kgTodos)}</td><td></td><td class="n">100%</td><td></td><td class="n">${ton(todosAnt.reduce((s, x) => s + x.liquido_kg, 0))} t</td></tr></table>`;
+      return `<tr data-pcliente="${esc(l.id)}" style="cursor:pointer${sel ? ";outline:2px solid var(--azul)" : ""}"><td>${esc(l.id)}</td><td class="n">${l.carradas}</td><td class="n"><b>${ton(l.kg)}</b></td><td><div class="barra" style="width:${Math.max(l.kg / maior * 100, 1)}%"></div></td><td class="n">${(l.kg / kgTodos * 100).toFixed(1).replace(".", ",")}%</td><td>${datas(l.id)}</td><td class="n">${a ? ton(a) + " t" : "—"}</td><td><button class="mini" data-ppdf="${esc(l.id)}">PDF</button></td></tr>`; }).join("") +
+    `<tr class="dia"><td>TOTAL GERAL</td><td class="n">${todos.length}</td><td class="n">${ton(kgTodos)}</td><td></td><td class="n">100%</td><td></td><td class="n">${ton(todosAnt.reduce((s, x) => s + x.liquido_kg, 0))} t</td><td></td></tr></table>`;
   const gp = agrupar(ps, x => ({ id: x.produto || x.produto_balanca, v: [] })).sort((p, q) => q.kg - p.kg);
   $("#pProdutos").innerHTML = !gp.length ? '<div class="vazio">—</div>' :
     `<table><tr><th>Produto</th><th class="n">Carradas</th><th class="n">Toneladas</th><th class="n">%</th></tr>` +
@@ -1146,10 +1164,12 @@ async function carregarPainel() {
   $("#pAlertas").innerHTML = al.length ? al.map(x => `<li>${x}</li>`).join("") : "<li>Tudo em dia.</li>";
 }
 $("#btPainel").addEventListener("click", carregarPainel);
+$("#btPainelPdf").addEventListener("click", () => extratoPainel($("#pCliente").value));
 $("#pAtalho").addEventListener("change", e => { if (e.target.value) { aplicarAtalhoPainel(e.target.value); carregarPainel(); } });
 $("#pCliente").addEventListener("change", carregarPainel);
 for (const id of ["#pDe", "#pAte"]) $(id).addEventListener("change", () => { $("#pAtalho").value = ""; carregarPainel(); });
 $("#pClientes").addEventListener("click", e => {
+  if (e.target.dataset.ppdf) return extratoPainel(e.target.dataset.ppdf);
   const tr = e.target.closest("[data-pcliente]"); if (!tr) return;
   $("#pCliente").value = $("#pCliente").value === tr.dataset.pcliente ? "" : tr.dataset.pcliente; carregarPainel();
 });
