@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geolux · Sistema de Gestão</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+  :root { --azul:#1F3A5F; --azul2:#DCE6F1; --cinza:#F4F5F7; --borda:#D5D9E0; --texto:#1d2330; --suave:#667085;
+          --ok:#1E7B45; --aviso:#9C5700; --avisofundo:#FFF2CC; --erro:#B42318; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--texto); background:#fff; }
+  header { background:var(--azul); color:#fff; padding:10px 16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  header .quem { margin-left:auto; font-size:13px; opacity:.9; }
+  nav { display:flex; gap:4px; padding:8px 16px 0; border-bottom:1px solid var(--borda); flex-wrap:wrap; }
+  nav button { border:1px solid transparent; border-bottom:none; background:none; padding:8px 14px; border-radius:8px 8px 0 0; cursor:pointer; font-size:14px; color:var(--suave); }
+  nav button.ativo { border-color:var(--borda); background:#fff; color:var(--azul); font-weight:600; margin-bottom:-1px; }
+  main { padding:16px; max-width:1400px; margin:0 auto; }
+  .card { border:1px solid var(--borda); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .linha { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+  label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--suave); }
+  input, select { font:inherit; padding:7px 9px; border:1px solid var(--borda); border-radius:6px; min-width:140px; }
+  button.bt { font:inherit; padding:8px 14px; border-radius:6px; border:1px solid var(--azul); background:var(--azul); color:#fff; cursor:pointer; }
+  button.bt.sec { background:#fff; color:var(--azul); }
+  button.bt:disabled { opacity:.5; cursor:default; }
+  button.mini { font-size:12px; padding:3px 8px; border:1px solid var(--borda); background:#fff; border-radius:5px; cursor:pointer; }
+  .kpis { display:flex; gap:12px; flex-wrap:wrap; margin:12px 0; }
+  .kpi { border:1px solid var(--borda); border-radius:10px; padding:10px 14px; min-width:150px; }
+  .kpi small { display:block; color:var(--suave); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi b { font-size:22px; color:var(--azul); }
+  .tabela { overflow-x:auto; border:1px solid var(--borda); border-radius:8px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th { background:var(--azul); color:#fff; text-align:left; padding:7px 8px; position:sticky; top:0; white-space:nowrap; }
+  td { padding:6px 8px; border-bottom:1px solid #eceef2; white-space:nowrap; }
+  tr:nth-child(even) td { background:var(--cinza); }
+  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  tr.sub td { background:var(--azul2) !important; font-weight:600; }
+  tr.dia td { background:var(--azul) !important; color:#fff; font-weight:600; }
+  tr.cancelada td { color:#98a2b3; text-decoration:line-through; }
+  .msg { padding:10px 12px; border-radius:8px; margin:10px 0; }
+  .msg.ok { background:#E7F6EC; color:var(--ok); }
+  .msg.aviso { background:var(--avisofundo); color:var(--aviso); }
+  .msg.erro { background:#FEE4E2; color:var(--erro); }
+  .alerta { color:var(--aviso); font-size:12px; }
+  .vazio { color:var(--suave); padding:20px; text-align:center; }
+  #login { max-width:360px; margin:60px auto; }
+  #login h2 { color:var(--azul); margin:0 0 4px; }
+  .escondido { display:none !important; }
+  @media (max-width:640px){ main{padding:12px;} .kpi{min-width:calc(50% - 6px);} }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     CONFIGURAÇÃO: cole aqui os dados do seu projeto no Supabase
+     (Settings > API Keys). A chave "publishable" (sb_publishable_...) pode ficar aqui.
+     NUNCA cole a chave "secret" (sb_secret_...) nem a "service_role".
+     ============================================================ -->
+<script>
+  const SUPABASE_URL = "https://vuhuefwdzsqueecokori.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_DC7ggpeE8dbgREsCdeZG8Q_PZacXLz_";
+</script>
+
+<header>
+  <h1>Geolux · Sistema de Gestão</h1>
+  <span class="quem" id="quem"></span>
+  <button class="mini escondido" id="sair">Sair</button>
+</header>
+
+<div id="login" class="card">
+  <h2>Entrar</h2>
+  <p style="color:var(--suave);margin-top:0">Use o e-mail e a senha cadastrados.</p>
+  <form id="formLogin" class="linha" style="flex-direction:column;align-items:stretch">
+    <label>E-mail <input type="email" id="email" required autocomplete="username"></label>
+    <label>Senha <input type="password" id="senha" required autocomplete="current-password"></label>
+    <button class="bt" type="submit">Entrar</button>
+  </form>
+  <div id="loginMsg"></div>
+</div>
+
+<div id="app" class="escondido">
+  <nav id="abas">
+    <button data-aba="anexar" class="ativo">Anexar relatório</button>
+    <button data-aba="relatorios">Relatórios</button>
+    <button data-aba="conferir" data-admin>A conferir</button>
+    <button data-aba="envio" data-admin>Envio semanal</button>
+    <button data-aba="cadastros" data-admin>Cadastros</button>
+    <button data-aba="fechamento" data-admin>Backup</button>
+  </nav>
+  <main>
+    <!-- ANEXAR -->
+    <section id="aba-anexar">
+      <div class="card">
+        <div class="linha">
+          <label>Relatório da balança (PDF)
+            <input type="file" id="arquivo" accept="application/pdf" multiple>
+          </label>
+          <button class="bt" id="btGravar" disabled>Gravar no sistema</button>
+          <button class="bt sec escondido" id="btRemover">Remover arquivo</button>
+        </div>
+        <p style="color:var(--suave);margin:10px 0 0;font-size:13px">
+          Na balança, gere o relatório filtrado só pela data do dia, com todos os clientes e produtos.
+          Anexar o mesmo arquivo ou o mesmo tiquete duas vezes não duplica nada.</p>
+      </div>
+      <div id="previa"></div>
+      <div class="card">
+        <h3 style="margin-top:0">Relatórios já anexados</h3>
+        <p id="anexosAjuda" style="color:var(--suave);font-size:13px;margin-top:0"></p>
+        <div id="anexosMsg"></div>
+        <div class="tabela" id="tabAnexos"></div>
+      </div>
+    </section>
+
+    <!-- RELATÓRIOS -->
+    <section id="aba-relatorios" class="escondido">
+      <div class="card linha">
+        <label>De <input type="date" id="fDe"></label>
+        <label>Até <input type="date" id="fAte"></label>
+        <label>Cliente <select id="fCliente"><option value="">Todos</option></select></label>
+        <label>Produto <select id="fProduto"><option value="">Todos</option></select></label>
+        <label>Visão
+          <select id="fVisao">
+            <option value="detalhado">Detalhado (igual à balança)</option>
+            <option value="dia">Total por dia</option>
+            <option value="diacliente">Por dia e cliente</option>
+            <option value="semana">Semanal por cliente</option>
+            <option value="mes">Mensal por cliente</option>
+            <option value="periodo">Período todo por cliente</option>
+          </select>
+        </label>
+        <label>Atalhos
+          <select id="fAtalho">
+            <option value="">—</option><option value="hoje">Hoje</option><option value="ontem">Ontem</option>
+            <option value="semana">Esta semana</option><option value="mes">Este mês</option>
+            <option value="mesant">Mês passado</option><option value="ano">Este ano</option>
+          </select>
+        </label>
+        <button class="bt" id="btFiltrar">Mostrar</button>
+        <button class="bt sec" id="btExcel">Baixar Excel</button>
+        <button class="bt sec" id="btComprovante">Comprovante de retirada (PDF)</button>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div id="relMsg"></div>
+      <div class="tabela" id="relTabela"></div>
+    </section>
+
+    <!-- A CONFERIR -->
+    <section id="aba-conferir" class="escondido">
+      <div class="card linha">
+        <label>De <input type="date" id="cDe"></label>
+        <label>Até <input type="date" id="cAte"></label>
+        <button class="bt" id="btConferir">Mostrar</button>
+      </div>
+      <p style="color:var(--suave);font-size:13px">Pesagens que podem gerar discussão com o cliente. Não são erros por si só, mas vale saber explicar cada uma.</p>
+      <div class="tabela" id="confTabela"></div>
+    </section>
+
+    <!-- ENVIO SEMANAL -->
+    <section id="aba-envio" class="escondido">
+      <div class="card linha">
+        <label>De <input type="date" id="eDe"></label>
+        <label>Até <input type="date" id="eAte"></label>
+        <button class="bt" id="btEnvio">Mostrar</button>
+      </div>
+      <p style="color:var(--suave);font-size:13px">Toda semana, envie a cada cliente o extrato das retiradas e peça o "de acordo".
+        <b>Enviar</b> baixa o PDF do cliente e abre o WhatsApp com a mensagem pronta: é só anexar o PDF e mandar.
+        Quando o cliente responder, registre aqui se ele ficou de acordo ou contestou.
+        O telefone sai do cadastro de clientes.</p>
+      <div id="envioMsg"></div>
+      <div class="tabela" id="tabEnvio"></div>
+    </section>
+
+    <!-- CADASTROS -->
+    <section id="aba-cadastros" class="escondido">
+      <div class="card">
+        <h3 style="margin-top:0">Nomes de produto da balança</h3>
+        <p style="color:var(--suave);font-size:13px;margin-top:0">Cada nome que aparece no relatório da balança precisa apontar para um produto do sistema.</p>
+        <div class="tabela" id="tabApelidos"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Clientes</h3>
+        <p style="color:var(--suave);font-size:13px;margin-top:0">Clientes novos entram sozinhos ao anexar o relatório. Complete aqui o nome completo e o documento, que saem no comprovante.</p>
+        <div class="tabela" id="tabClientes"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Produtos</h3>
+        <div class="linha" style="margin-bottom:10px">
+          <label>Novo produto <input id="novoProduto"></label>
+          <button class="bt" id="btNovoProduto">Adicionar</button>
+        </div>
+        <div class="tabela" id="tabProdutos"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Usuários</h3>
+        <div class="tabela" id="tabUsuarios"></div>
+      </div>
+    </section>
+
+    <!-- BACKUP -->
+    <section id="aba-fechamento" class="escondido">
+      <div class="card">
+        <h3 style="margin-top:0">Backup</h3>
+        <p style="margin-top:0">Baixa uma cópia completa do banco (todas as tabelas) em Excel e em JSON. Guarde os dois arquivos no Google Drive ou num pendrive toda semana. A lista dos PDFs da balança vai junto; os PDFs em si você já guarda no computador da balança.</p>
+        <button class="bt" id="btBackup">Baixar backup completo</button>
+        <div id="backupMsg"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script type="module">
+import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
+
+const EMPRESA = "GEOLUX MINERADORA E INDUSTRIA E COMERCIO EIRELI";
+const ENDERECO = "Sítio Canta Galo, Bairro Canta Galo, Acarape - CE, CEP 62785-000, fone (85) 3021-2100";
+const BUCKET = "relatorios-balanca";
+const db = window.__TEST_DB || supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let papel = null, usuario = null;
+
+// ------------------------------------------------------------------ utilidades
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const kg = v => Math.round(v).toLocaleString("pt-BR");
+const ton = v => (v / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const br = s => s ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : "";
+const brHora = s => s ? br(s.slice(0, 10)) + " " + s.slice(11, 16) : "";
+const msg = (el, tipo, texto) => { $(el).innerHTML = texto ? `<div class="msg ${tipo}">${texto}</div>` : ""; };
+const erroTxt = e => esc(e?.message || e?.error_description || String(e));
+function segundaDaSemana(s) { const d = new Date(s + "T12:00:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); }
+async function sha256(buf) {
+  if (globalThis.crypto?.subtle) {
+    const h = await crypto.subtle.digest("SHA-256", buf);
+    return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+  return sha256js(new Uint8Array(buf)); // navegador sem crypto.subtle (página aberta fora de https)
+}
+function sha256js(m) {
+  const K = [], H = [1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225];
+  for (let n = 2, c = 0; c < 64; n++) { let p = true; for (let d = 2; d * d <= n; d++) if (n % d === 0) { p = false; break; } if (p) K[c++] = (Math.cbrt(n) % 1) * 2 ** 32 | 0; }
+  const L = m.length, tam = ((L + 9 + 63) >> 6) << 6, b = new Uint8Array(tam); b.set(m); b[L] = 0x80;
+  const dv = new DataView(b.buffer); dv.setUint32(tam - 4, L * 8 >>> 0); dv.setUint32(tam - 8, Math.floor(L / 2 ** 29));
+  const w = new Int32Array(64), r = (x, n) => x >>> n | x << 32 - n;
+  for (let i = 0; i < tam; i += 64) {
+    for (let t = 0; t < 16; t++) w[t] = dv.getInt32(i + t * 4);
+    for (let t = 16; t < 64; t++) w[t] = (r(w[t - 2], 17) ^ r(w[t - 2], 19) ^ w[t - 2] >>> 10) + w[t - 7] + (r(w[t - 15], 7) ^ r(w[t - 15], 18) ^ w[t - 15] >>> 3) + w[t - 16] | 0;
+    let [a, bb, c, d, e, f, g, h] = H;
+    for (let t = 0; t < 64; t++) {
+      const t1 = h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + (e & f ^ ~e & g) + K[t] + w[t] | 0;
+      const t2 = (r(a, 2) ^ r(a, 13) ^ r(a, 22)) + (a & bb ^ a & c ^ bb & c) | 0;
+      h = g; g = f; f = e; e = d + t1 | 0; d = c; c = bb; bb = a; a = t1 + t2 | 0;
+    }
+    [a, bb, c, d, e, f, g, h].forEach((v, k) => H[k] = H[k] + v | 0);
+  }
+  return H.map(v => (v >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+// os avisos "a conferir" aparecem só para o administrador
+function alertas(p) {
+  if (papel !== "admin") return "";
+  const a = [];
+  if (!p.motorista) a.push("motorista não informado");
+  const min = (new Date(p.saida_em) - new Date(p.entrada_em)) / 60000;
+  if (min <= 0) a.push("saída no mesmo minuto da entrada");
+  else if (min > 180) a.push(`${(min / 60).toFixed(1).replace(".", ",")} h entre entrada e saída`);
+  if (p.liquido_kg !== p.peso_saida_kg - p.peso_entrada_kg) a.push("líquido diferente de saída menos entrada");
+  if (!p.produto) a.push(`produto "${p.produto_balanca}" sem associação`);
+  return a.join("; ");
+}
+
+// ------------------------------------------------------------------ leitura do PDF da balança
+// O relatório (Crystal Reports) traz cada campo como um texto separado, sempre na mesma coluna.
+const DATA_HORA = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/;
+const PESO = /^[\d.]+$/;
+const num = s => parseInt(String(s).replace(/\D/g, ""), 10);
+const paraIso = s => `${s.slice(6, 10)}-${s.slice(3, 5)}-${s.slice(0, 2)}T${s.slice(11, 16)}:00`;
+
+async function lerPdf(buf) {
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const linhas = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    const porY = new Map();
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const y = Math.round(it.transform[5]);
+      const chave = [...porY.keys()].find(k => Math.abs(k - y) <= 2) ?? y;
+      if (!porY.has(chave)) porY.set(chave, []);
+      porY.get(chave).push({ x: it.transform[4], s: it.str.trim() });
+    }
+    for (const y of [...porY.keys()].sort((a, b) => b - a))
+      linhas.push(porY.get(y).sort((a, b) => a.x - b.x));
+  }
+  return interpretar(linhas);
+}
+
+function interpretar(linhas) {
+  // posições das colunas pelo cabeçalho (com valores padrão caso o cabeçalho mude)
+  const ancoras = { ticket: 13, placa: 68, produto: 108, cliente: 173, transportador: 255, motorista: 331, nota: 392 };
+  const nomesCab = { "Tiquetes": "ticket", "Placa": "placa", "Produto": "produto", "Cliente ou": "cliente",
+                     "Transportador": "transportador", "Motorista": "motorista", "Nº Nota": "nota" };
+  for (const l of linhas) for (const it of l) if (nomesCab[it.s]) ancoras[nomesCab[it.s]] = it.x;
+  const cols = Object.entries(ancoras);
+
+  const pesagens = [], naoLidas = [];
+  let totais = null;
+  for (const l of linhas) {
+    const textos = l.map(i => i.s);
+    const iTot = textos.indexOf("TOTAIS:");
+    if (iTot >= 0) { const v = textos.slice(iTot + 1).map(num); totais = { carradas: v[0], entrada: v[1], saida: v[2], liquido: v[3] }; continue; }
+    if (!/^\d{3,}$/.test(textos[0] || "")) continue;
+    const datas = textos.filter(t => DATA_HORA.test(t));
+    if (datas.length !== 2 || l.length < 12) { naoLidas.push(textos.join(" | ")); continue; }
+    const fim = l.slice(-7).map(i => i.s);                // op_ent, peso_ent, data_ent, op_sai, peso_sai, data_sai, liquido
+    if (!PESO.test(fim[1]) || !DATA_HORA.test(fim[2]) || !PESO.test(fim[4]) || !DATA_HORA.test(fim[5]) || !PESO.test(fim[6])) {
+      naoLidas.push(textos.join(" | ")); continue;
+    }
+    const r = { ticket: num(textos[0]), placa: "", produto_balanca: "", cliente_balanca: "", transportador: "", motorista: "", nota: "" };
+    const mapa = { placa: "placa", produto: "produto_balanca", cliente: "cliente_balanca", transportador: "transportador", motorista: "motorista", nota: "nota" };
+    for (const it of l.slice(1, -7)) {
+      const [col] = cols.reduce((m, c) => Math.abs(c[1] - it.x) < Math.abs(m[1] - it.x) ? c : m);
+      if (mapa[col]) r[mapa[col]] = (r[mapa[col]] ? r[mapa[col]] + " " : "") + it.s;
+    }
+    for (const c of ["transportador", "motorista"]) if (/^n[aã]o informado$/i.test(r[c])) r[c] = "";
+    Object.assign(r, {
+      operador_entrada: fim[0], peso_entrada_kg: num(fim[1]), entrada_em: paraIso(fim[2]),
+      operador_saida: fim[3], peso_saida_kg: num(fim[4]), saida_em: paraIso(fim[5]), liquido_kg: num(fim[6]),
+    });
+    pesagens.push(r);
+  }
+  const soma = { carradas: pesagens.length, entrada: 0, saida: 0, liquido: 0 };
+  for (const p of pesagens) { soma.entrada += p.peso_entrada_kg; soma.saida += p.peso_saida_kg; soma.liquido += p.liquido_kg; }
+  const confere = !!totais && ["carradas", "entrada", "saida", "liquido"].every(k => totais[k] === soma[k]);
+  return { pesagens, naoLidas, totais, soma, confere };
+}
+window.__interpretar = interpretar; window.__lerPdf = lerPdf;
+
+// ------------------------------------------------------------------ login
+async function iniciar() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) { $("#login").classList.remove("escondido"); $("#app").classList.add("escondido"); return; }
+  usuario = session.user;
+  const { data: perfil } = await db.from("perfis").select("papel,nome").eq("user_id", usuario.id).maybeSingle();
+  if (!perfil) { msg("#loginMsg", "erro", "Este usuário ainda não tem perfil no sistema. Peça ao administrador para liberar."); await db.auth.signOut(); return; }
+  papel = perfil.papel;
+  $("#quem").textContent = `${perfil.nome || usuario.email} · ${papel === "admin" ? "Administrador" : "Balança"}`;
+  $("#sair").classList.remove("escondido");
+  document.querySelectorAll("[data-admin]").forEach(b => b.classList.toggle("escondido", papel !== "admin"));
+  $("#login").classList.add("escondido"); $("#app").classList.remove("escondido");
+  const hoje = iso(new Date());
+  for (const id of ["#fDe", "#fAte", "#cAte"]) $(id).value = hoje;
+  const d = new Date(); d.setDate(d.getDate() - 30); $("#cDe").value = iso(d);
+  const seg = new Date(segundaDaSemana(hoje) + "T12:00:00"); seg.setDate(seg.getDate() - 7);
+  const dom = new Date(seg); dom.setDate(dom.getDate() + 6);
+  $("#eDe").value = iso(seg); $("#eAte").value = iso(dom);
+  await carregarFiltros();
+  carregarAnexos();
+}
+$("#formLogin").addEventListener("submit", async e => {
+  e.preventDefault();
+  const { error } = await db.auth.signInWithPassword({ email: $("#email").value.trim(), password: $("#senha").value });
+  if (error) return msg("#loginMsg", "erro", "E-mail ou senha incorretos.");
+  msg("#loginMsg"); iniciar();
+});
+$("#sair").addEventListener("click", async () => { await db.auth.signOut(); location.reload(); });
+
+document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#abas button").forEach(x => x.classList.toggle("ativo", x === b));
+  document.querySelectorAll("main > section").forEach(s => s.classList.toggle("escondido", s.id !== "aba-" + b.dataset.aba));
+  if (b.dataset.aba === "cadastros") carregarCadastros();
+  if (b.dataset.aba === "conferir") mostrarConferir();
+  if (b.dataset.aba === "anexar") carregarAnexos();
+  if (b.dataset.aba === "envio") carregarEnvio();
+}));
+
+// ------------------------------------------------------------------ anexar relatório
+let lidos = [];
+$("#arquivo").addEventListener("change", async e => {
+  lidos = []; $("#btGravar").disabled = true; $("#previa").innerHTML = '<div class="vazio">Lendo…</div>';
+  const { data: apelidos } = await db.from("produto_apelidos").select("apelido,produto_id");
+  const conhecidos = new Map((apelidos || []).map(a => [a.apelido, a.produto_id]));
+  let html = "";
+  for (const f of e.target.files) {
+    const buf = await f.arrayBuffer();
+    const hash = await sha256(buf);
+    const { data: anteriores } = await db.from("importacoes").select("importado_em,importacao_cancelamentos(motivo)").eq("sha256", hash);
+    const cancelado = i => Array.isArray(i.importacao_cancelamentos) ? i.importacao_cancelamentos.length : !!i.importacao_cancelamentos;
+    const ja = (anteriores || []).find(i => !cancelado(i)), jaCancelado = (anteriores || []).find(cancelado);
+    let r;
+    try { r = await lerPdf(buf.slice(0)); } catch (err) { html += `<div class="msg erro">${esc(f.name)}: não foi possível ler o PDF (${erroTxt(err)}).</div>`; continue; }
+    const semProduto = [...new Set(r.pesagens.map(p => p.produto_balanca))].filter(n => !conhecidos.get(n.toLowerCase()));
+    html += `<div class="card"><h3 style="margin:0 0 6px">${esc(f.name)}</h3>`;
+    if (ja) html += `<div class="msg aviso">Este arquivo já foi anexado em ${new Date(ja.importado_em).toLocaleString("pt-BR")}. Nada será gravado de novo. Se quiser anexar de novo, cancele antes o anexo anterior.</div>`;
+    else if (jaCancelado) html += `<div class="msg ok">Este arquivo já foi anexado e cancelado. Pode gravar de novo: as carradas dele voltam a valer.</div>`;
+    html += r.confere
+      ? `<div class="msg ok">${r.soma.carradas} carradas lidas, ${ton(r.soma.liquido)} t. Os totais conferem com o rodapé do relatório.</div>`
+      : `<div class="msg erro">Atenção: a leitura não bate com os totais do relatório (lido: ${r.soma.carradas} carradas, ${kg(r.soma.liquido)} kg; relatório: ${r.totais ? r.totais.carradas + " carradas, " + kg(r.totais.liquido) + " kg" : "sem totais"}). Confira antes de gravar.</div>`;
+    if (r.naoLidas.length) html += `<div class="msg erro">${r.naoLidas.length} linha(s) não reconhecida(s):<br>${r.naoLidas.map(esc).join("<br>")}</div>`;
+    const semMotorista = r.pesagens.filter(p => !p.motorista).length;
+    if (semMotorista) html += `<div class="msg aviso">${semMotorista} de ${r.pesagens.length} carradas estão sem motorista. Combinado: nenhuma carrada sai da balança sem o nome do motorista preenchido.</div>`;
+    if (semProduto.length) html += `<div class="msg aviso">Nome de produto novo na balança: ${semProduto.map(esc).join(", ")}. Grave normalmente; o administrador associa em Cadastros.</div>`;
+    html += tabelaPesagens(r.pesagens.map(p => ({ ...p, produto: conhecidos.get(p.produto_balanca.toLowerCase()) ? "ok" : null }))) + "</div>";
+    if (!ja && r.pesagens.length) lidos.push({ nome: f.name, buf, hash, ...r });
+  }
+  $("#previa").innerHTML = html || '<div class="vazio">Nenhum arquivo.</div>';
+  $("#btGravar").disabled = !lidos.length;
+  $("#btRemover").classList.remove("escondido");
+});
+
+// antes de gravar, nada foi para o sistema: remover só limpa a tela
+function limparAnexo() {
+  lidos = []; $("#arquivo").value = ""; $("#previa").innerHTML = "";
+  $("#btGravar").disabled = true; $("#btRemover").classList.add("escondido"); msg("#anexosMsg");
+}
+$("#btRemover").addEventListener("click", limparAnexo);
+
+function tabelaPesagens(ps) {
+  return `<div class="tabela"><table><tr><th>Tiquete</th><th>Placa</th><th>Produto</th><th>Cliente</th><th>Motorista</th><th>Nº Nota</th><th>Entrada</th><th class="n">Tara (kg)</th><th>Saída</th><th class="n">Bruto (kg)</th><th class="n">Líquido (kg)</th><th>Observação</th></tr>` +
+    ps.map(p => `<tr><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto_balanca)}</td><td>${esc(p.cliente_balanca)}</td><td>${esc(p.motorista || "—")}</td><td>${esc(p.nota || "—")}</td><td>${brHora(p.entrada_em)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td class="n"><b>${kg(p.liquido_kg)}</b></td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") +
+    `</table></div>`;
+}
+
+$("#btGravar").addEventListener("click", async () => {
+  $("#btGravar").disabled = true;
+  let html = "";
+  for (const r of lidos) {
+    try {
+      const caminho = `${r.pesagens[0].saida_em.slice(0, 7)}/${r.hash.slice(0, 16)}_${Date.now()}_${r.nome.replace(/[^\w.-]+/g, "_")}`;
+      const up = await db.storage.from(BUCKET).upload(caminho, new Blob([r.buf], { type: "application/pdf" }));
+      if (up.error) throw up.error;
+      const imp = await db.from("importacoes").insert({ arquivo_nome: r.nome, sha256: r.hash, caminho_storage: caminho,
+        carradas_lidas: r.soma.carradas, total_liquido_kg: r.soma.liquido, totais_conferem: r.confere, importado_por: usuario.id }).select("id").single();
+      if (imp.error) throw imp.error;
+      const clientes = [...new Set(r.pesagens.map(p => p.cliente_balanca))].map(c => ({ nome_balanca: c, nome: c }));
+      let res = await db.from("clientes").upsert(clientes, { onConflict: "nome_balanca", ignoreDuplicates: true });
+      if (res.error) throw res.error;
+      const apel = [...new Set(r.pesagens.map(p => p.produto_balanca.toLowerCase()))].map(a => ({ apelido: a }));
+      res = await db.from("produto_apelidos").upsert(apel, { onConflict: "apelido", ignoreDuplicates: true });
+      if (res.error) throw res.error;
+      res = await db.from("pesagens").upsert(r.pesagens.map(p => ({ ...p, importacao_id: imp.data.id })),
+                                              { onConflict: "ticket", ignoreDuplicates: true }).select("ticket");
+      if (res.error) throw res.error;
+      const gravadas = new Set(res.data.map(x => x.ticket));
+      const jaExistiam = r.pesagens.map(p => p.ticket).filter(t => !gravadas.has(t));
+      // carradas de um anexo cancelado voltam a valer quando aparecem num relatório correto
+      let reativadas = 0;
+      if (jaExistiam.length) {
+        const rv = await db.rpc("reativar_pesagens", { p_tickets: jaExistiam, p_importacao_id: imp.data.id });
+        if (rv.error) throw rv.error;
+        reativadas = rv.data || 0;
+      }
+      const repetidas = jaExistiam.length - reativadas;
+      html += `<div class="msg ok">${esc(r.nome)}: ${gravadas.size + reativadas} carradas gravadas${repetidas ? `, ${repetidas} já existiam e foram ignoradas` : ""}.</div>`;
+    } catch (err) {
+      html += `<div class="msg erro">${esc(r.nome)}: não foi gravado. ${erroTxt(err)}</div>`;
+    }
+  }
+  limparAnexo();
+  $("#previa").innerHTML = html;
+  carregarFiltros(); carregarAnexos();
+});
+
+// ------------------------------------------------------------------ anexos já gravados
+const hojeBR = () => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+async function carregarAnexos() {
+  $("#anexosAjuda").textContent = papel === "admin"
+    ? "Anexou um relatório errado? Clique em Cancelar anexo e informe o motivo. O anexo e as carradas dele saem das telas e dos relatórios, e você pode anexar o arquivo de novo depois. Por segurança, ficam guardados só no backup."
+    : "Anexou um relatório errado? Você pode cancelar no mesmo dia, informando o motivo. Depois disso, peça ao administrador.";
+  const { data, error } = await db.from("importacoes")
+    .select("id,arquivo_nome,carradas_lidas,total_liquido_kg,importado_por,importado_em,importacao_cancelamentos(motivo,cancelado_em)")
+    .order("importado_em", { ascending: false }).limit(30);
+  if (error) return $("#tabAnexos").innerHTML = `<div class="msg erro">${erroTxt(error)}</div>`;
+  const ativos = data.filter(i => !(Array.isArray(i.importacao_cancelamentos) ? i.importacao_cancelamentos.length : i.importacao_cancelamentos));
+  if (!ativos.length) return $("#tabAnexos").innerHTML = '<div class="vazio">Nenhum relatório anexado ainda.</div>';
+  const hoje = hojeBR();
+  $("#tabAnexos").innerHTML = `<table><tr><th>Anexado em</th><th>Arquivo</th><th class="n">Carradas</th><th class="n">Toneladas</th><th>Situação</th><th></th></tr>` +
+    ativos.map(i => {
+      const c = Array.isArray(i.importacao_cancelamentos) ? i.importacao_cancelamentos[0] : i.importacao_cancelamentos;
+      const podeCancelar = !c && (papel === "admin" ||
+        (i.importado_por === usuario.id && new Date(i.importado_em).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }) === hoje));
+      return `<tr class="${c ? "cancelada" : ""}"><td>${new Date(i.importado_em).toLocaleString("pt-BR")}</td><td>${esc(i.arquivo_nome)}</td><td class="n">${i.carradas_lidas}</td><td class="n">${ton(i.total_liquido_kg)}</td>` +
+        `<td>${c ? `cancelado: ${esc(c.motivo)}` : "gravado"}</td><td>${podeCancelar ? `<button class="mini" data-cancelar-anexo="${i.id}" data-nome="${esc(i.arquivo_nome)}">Cancelar anexo</button>` : ""}</td></tr>`;
+    }).join("") + "</table>";
+}
+$("#tabAnexos").addEventListener("click", async e => {
+  const id = e.target.dataset.cancelarAnexo; if (!id) return;
+  const motivo = prompt(`Cancelar o anexo "${e.target.dataset.nome}"?\nAs carradas que entraram por ele saem dos relatórios.\n\nMotivo:`);
+  if (!motivo || !motivo.trim()) return;
+  const { data, error } = await db.rpc("cancelar_importacao", { p_id: Number(id), p_motivo: motivo.trim() });
+  if (error) return msg("#anexosMsg", "erro", erroTxt(error));
+  msg("#anexosMsg", "ok", `Anexo cancelado. ${data} carrada(s) saíram dos relatórios.`);
+  carregarAnexos(); carregarFiltros();
+});
+
+// ------------------------------------------------------------------ consulta
+async function buscar(de, ate, { canceladas = false } = {}) {
+  const todas = [];
+  for (let i = 0; ; i += 1000) {
+    let q = db.from("v_pesagens").select("*").gte("data", de).lte("data", ate).order("saida_em").range(i, i + 999);
+    if (!canceladas) q = q.eq("situacao", "valida");
+    const { data, error } = await q;
+    if (error) throw error;
+    todas.push(...data);
+    if (data.length < 1000) break;
+  }
+  return todas.filter(p => !(p.motivo_cancelamento || "").startsWith("Anexo cancelado: "));
+}
+
+async function carregarFiltros() {
+  const [{ data: cl }, { data: pr }] = await Promise.all([
+    db.from("clientes").select("nome,nome_balanca").order("nome"),
+    db.from("produtos").select("nome").order("nome")]);
+  const manter = (sel, itens) => { const v = $(sel).value; $(sel).innerHTML = '<option value="">Todos</option>' + itens.map(i => `<option>${esc(i)}</option>`).join(""); $(sel).value = v; };
+  manter("#fCliente", [...new Set((cl || []).map(c => c.nome))]);
+  manter("#fProduto", (pr || []).map(p => p.nome));
+}
+
+$("#fAtalho").addEventListener("change", e => {
+  const h = new Date(); let de = new Date(h), ate = new Date(h);
+  switch (e.target.value) {
+    case "ontem": de.setDate(h.getDate() - 1); ate = new Date(de); break;
+    case "semana": de.setDate(h.getDate() - ((h.getDay() + 6) % 7)); break;
+    case "mes": de = new Date(h.getFullYear(), h.getMonth(), 1); break;
+    case "mesant": de = new Date(h.getFullYear(), h.getMonth() - 1, 1); ate = new Date(h.getFullYear(), h.getMonth(), 0); break;
+    case "ano": de = new Date(h.getFullYear(), 0, 1); break;
+  }
+  $("#fDe").value = iso(de); $("#fAte").value = iso(ate); mostrarRelatorio();
+});
+
+let atual = [];
+async function filtrar() {
+  const ps = await buscar($("#fDe").value, $("#fAte").value, { canceladas: $("#fVisao").value === "detalhado" });
+  const c = $("#fCliente").value, p = $("#fProduto").value;
+  return ps.filter(x => (!c || x.cliente === c) && (!p || x.produto === p));
+}
+
+function agrupar(ps, chave) {
+  const m = new Map();
+  for (const x of ps) {
+    const k = chave(x); if (!m.has(k.id)) m.set(k.id, { ...k, carradas: 0, kg: 0 });
+    const g = m.get(k.id); g.carradas++; g.kg += x.liquido_kg;
+  }
+  return [...m.values()];
+}
+const VISOES = {
+  dia:        { cols: ["Data"],                         chave: x => ({ id: x.data, v: [br(x.data)] }) },
+  diacliente: { cols: ["Data", "Cliente", "Produto"],   chave: x => ({ id: x.data + x.cliente + x.produto, v: [br(x.data), x.cliente, x.produto || x.produto_balanca] }) },
+  semana:     { cols: ["Semana (segunda-feira)", "Cliente"], chave: x => ({ id: segundaDaSemana(x.data) + x.cliente, v: [br(segundaDaSemana(x.data)), x.cliente] }) },
+  mes:        { cols: ["Mês", "Cliente", "Produto"],    chave: x => ({ id: x.data.slice(0, 7) + x.cliente + x.produto, v: [x.data.slice(5, 7) + "/" + x.data.slice(0, 4), x.cliente, x.produto || x.produto_balanca] }) },
+  periodo:    { cols: ["Cliente", "Produto"],           chave: x => ({ id: x.cliente + x.produto, v: [x.cliente, x.produto || x.produto_balanca] }) },
+};
+
+async function mostrarRelatorio() {
+  msg("#relMsg"); $("#relTabela").innerHTML = '<div class="vazio">Carregando…</div>';
+  try { atual = await filtrar(); } catch (e) { $("#relTabela").innerHTML = ""; return msg("#relMsg", "erro", erroTxt(e)); }
+  const validas = atual.filter(x => x.situacao === "valida");
+  const tot = validas.reduce((s, x) => s + x.liquido_kg, 0);
+  $("#kpis").innerHTML = [["Carradas", validas.length], ["Total retirado", ton(tot) + " t"],
+    ["Clientes", new Set(validas.map(x => x.cliente)).size], ...(papel === "admin" ? [["A conferir", validas.filter(alertas).length],
+      ["Sem motorista", `${validas.filter(x => !x.motorista).length} (${validas.length ? Math.round(validas.filter(x => !x.motorista).length / validas.length * 100) : 0}%)`]] : [])]
+    .map(([a, b]) => `<div class="kpi"><small>${a}</small><b>${b}</b></div>`).join("");
+  if (!atual.length) return $("#relTabela").innerHTML = '<div class="vazio">Nenhuma carrada nesse período.</div>';
+  const visao = $("#fVisao").value;
+  if (visao === "detalhado") return $("#relTabela").innerHTML = tabelaDetalhada(atual);
+  const v = VISOES[visao], linhas = agrupar(validas, v.chave);
+  $("#relTabela").innerHTML = `<table><tr>${v.cols.map(c => `<th>${c}</th>`).join("")}<th class="n">Carradas</th><th class="n">Toneladas</th><th class="n">% do total</th></tr>` +
+    linhas.map(l => `<tr>${l.v.map(c => `<td>${esc(c)}</td>`).join("")}<td class="n">${l.carradas}</td><td class="n">${ton(l.kg)}</td><td class="n">${(l.kg / tot * 100).toFixed(1).replace(".", ",")}%</td></tr>`).join("") +
+    `<tr class="dia"><td colspan="${v.cols.length}">TOTAL</td><td class="n">${validas.length}</td><td class="n">${ton(tot)}</td><td class="n">100%</td></tr></table>`;
+}
+
+function tabelaDetalhada(ps) {
+  let h = `<table><tr><th>Tiquete</th><th>Placa</th><th>Produto</th><th>Cliente</th><th>Transportador</th><th>Motorista</th><th>Nº Nota</th><th>Op. entrada</th><th class="n">Peso entrada (kg)</th><th>Entrada</th><th>Op. saída</th><th class="n">Peso saída (kg)</th><th>Saída</th><th class="n">Líquido (kg)</th><th>Observação</th>${papel === "admin" ? "<th></th>" : ""}</tr>`;
+  const dias = [...new Set(ps.map(p => p.data))];
+  const cols = papel === "admin" ? 16 : 15;
+  for (const d of dias) {
+    const pd = ps.filter(p => p.data === d);
+    for (const c of [...new Set(pd.map(p => p.cliente))].sort()) {
+      const pc = pd.filter(p => p.cliente === c);
+      for (const p of pc) {
+        const obs = p.situacao === "cancelada" ? `cancelada: ${p.motivo_cancelamento}` : alertas(p);
+        h += `<tr class="${p.situacao === "cancelada" ? "cancelada" : ""}"><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto || p.produto_balanca)}</td><td>${esc(p.cliente)}</td><td>${esc(p.transportador || "—")}</td><td>${esc(p.motorista || "—")}</td><td>${esc(p.nota || "—")}</td><td>${esc(p.operador_entrada)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.entrada_em)}</td><td>${esc(p.operador_saida)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n"><b>${kg(p.liquido_kg)}</b></td><td class="alerta">${esc(obs)}</td>` +
+             (papel === "admin" ? `<td>${p.situacao === "valida" ? `<button class="mini" data-cancelar="${p.ticket}">Cancelar</button>` : ""}</td>` : "") + `</tr>`;
+      }
+      const v = pc.filter(p => p.situacao === "valida");
+      h += `<tr class="sub"><td>${v.length} carradas</td><td colspan="12">Subtotal ${esc(c)} · ${br(d)}</td><td class="n">${kg(v.reduce((s, p) => s + p.liquido_kg, 0))}</td><td colspan="${cols - 14}"></td></tr>`;
+    }
+    const v = pd.filter(p => p.situacao === "valida");
+    h += `<tr class="dia"><td>${v.length} carradas</td><td colspan="12">TOTAL DO DIA ${br(d)}</td><td class="n">${kg(v.reduce((s, p) => s + p.liquido_kg, 0))}</td><td colspan="${cols - 14}"></td></tr>`;
+  }
+  return h + "</table>";
+}
+
+$("#relTabela").addEventListener("click", async e => {
+  const t = e.target.dataset.cancelar; if (!t) return;
+  const motivo = prompt(`Motivo do cancelamento do tiquete ${t}:`);
+  if (!motivo || !motivo.trim()) return;
+  const { error } = await db.from("pesagens").update({ situacao: "cancelada", motivo_cancelamento: motivo.trim() }).eq("ticket", t);
+  if (error) return msg("#relMsg", "erro", erroTxt(error));
+  mostrarRelatorio();
+});
+$("#btFiltrar").addEventListener("click", mostrarRelatorio);
+$("#fVisao").addEventListener("change", mostrarRelatorio);
+
+// ------------------------------------------------------------------ a conferir
+async function mostrarConferir() {
+  $("#confTabela").innerHTML = '<div class="vazio">Carregando…</div>';
+  try {
+    const ps = (await buscar($("#cDe").value, $("#cAte").value)).filter(alertas);
+    $("#confTabela").innerHTML = ps.length
+      ? `<table><tr><th>Data</th><th>Tiquete</th><th>Cliente</th><th>Placa</th><th>Motorista</th><th>Entrada</th><th>Saída</th><th class="n">Líquido (kg)</th><th>O que conferir</th></tr>` +
+        ps.map(p => `<tr><td>${br(p.data)}</td><td>${p.ticket}</td><td>${esc(p.cliente)}</td><td>${esc(p.placa)}</td><td>${esc(p.motorista || "—")}</td><td>${brHora(p.entrada_em)}</td><td>${brHora(p.saida_em)}</td><td class="n">${kg(p.liquido_kg)}</td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") + "</table>"
+      : '<div class="vazio">Nada a conferir nesse período.</div>';
+  } catch (e) { $("#confTabela").innerHTML = `<div class="msg erro">${erroTxt(e)}</div>`; }
+}
+$("#btConferir").addEventListener("click", mostrarConferir);
+
+// ------------------------------------------------------------------ Excel
+$("#btExcel").addEventListener("click", async () => {
+  if (!atual.length) await mostrarRelatorio();
+  if (!atual.length) return;
+  const validas = atual.filter(x => x.situacao === "valida");
+  const wb = new ExcelJS.Workbook();
+  const azul = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F3A5F" } };
+  const azul2 = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCE6F1" } };
+  const amarelo = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
+  function aba(nome, cab, linhas, larg = 16) {
+    const ws = wb.addWorksheet(nome, { views: [{ state: "frozen", ySplit: 1 }] });
+    ws.addRow(cab).eachCell(c => { c.fill = azul; c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.alignment = { wrapText: true, vertical: "middle" }; });
+    ws.getRow(1).height = 30;
+    for (const l of linhas) ws.addRow(l);
+    ws.columns.forEach((c, i) => { c.width = Array.isArray(larg) ? larg[i] || 14 : larg; });
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: cab.length } };
+    return ws;
+  }
+  const t = x => Math.round(x) / 1000;
+  const tot = validas.reduce((s, x) => s + x.liquido_kg, 0);
+  for (const [nome, k] of [["Resumo por cliente", "periodo"], ["Total por dia", "dia"], ["Por dia e cliente", "diacliente"], ["Semanal por cliente", "semana"], ["Mensal por cliente", "mes"]]) {
+    const v = VISOES[k], ls = agrupar(validas, v.chave);
+    const ws = aba(nome, [...v.cols, "Carradas", "Toneladas", "% do total"], ls.map(l => [...l.v, l.carradas, t(l.kg), l.kg / tot]), [14, 30, 22, 12, 14, 12]);
+    const r = ws.addRow([...v.cols.map((_, i) => i ? "" : "TOTAL"), validas.length, t(tot), 1]);
+    r.eachCell(c => { c.fill = azul; c.font = { bold: true, color: { argb: "FFFFFFFF" } }; });
+    ws.getColumn(v.cols.length + 2).numFmt = "#,##0.000"; ws.getColumn(v.cols.length + 3).numFmt = "0.0%";
+  }
+  // detalhado, igual à balança
+  const cab = ["Tiquete", "Placa", "Produto", "Cliente ou Fornecedor", "Transportador", "Motorista", "Nº Nota", "Operador de Entrada", "Peso de Entrada (kg)", "Data/Hora de Entrada", "Operador da Saída", "Peso de Saída (kg)", "Data/Hora de Saída", "Peso Líquido (kg)", "Situação", "Observação", "Arquivo da balança", "Código de verificação (SHA-256)"];
+  const ws = aba("Detalhado por dia", cab, [], [10, 10, 20, 26, 14, 14, 10, 12, 12, 17, 12, 12, 17, 12, 11, 40, 22, 30]);
+  for (const d of [...new Set(atual.map(p => p.data))]) {
+    const pd = atual.filter(p => p.data === d);
+    for (const c of [...new Set(pd.map(p => p.cliente))].sort()) {
+      const pc = pd.filter(p => p.cliente === c);
+      for (const p of pc) ws.addRow([p.ticket, p.placa, p.produto || p.produto_balanca, p.cliente, p.transportador, p.motorista, p.nota, p.operador_entrada, p.peso_entrada_kg, brHora(p.entrada_em), p.operador_saida, p.peso_saida_kg, brHora(p.saida_em), p.liquido_kg, p.situacao, p.situacao === "cancelada" ? p.motivo_cancelamento : alertas(p), p.arquivo_nome, p.sha256]);
+      const v = pc.filter(p => p.situacao === "valida");
+      ws.addRow([`${v.length} carradas`, "", "", `Subtotal ${c} · ${br(d)}`, "", "", "", "", "", "", "", "", "", v.reduce((s, p) => s + p.liquido_kg, 0)]).eachCell(x => { x.fill = azul2; x.font = { bold: true }; });
+    }
+    const v = pd.filter(p => p.situacao === "valida");
+    ws.addRow([`${v.length} carradas`, "", "", `TOTAL DO DIA ${br(d)}`, "", "", "", "", "", "", "", "", "", v.reduce((s, p) => s + p.liquido_kg, 0)]).eachCell(x => { x.fill = azul; x.font = { bold: true, color: { argb: "FFFFFFFF" } }; });
+    ws.addRow([]);
+  }
+  for (const col of [9, 12, 14]) ws.getColumn(col).numFmt = "#,##0";
+  const conf = validas.filter(alertas);
+  if (papel === "admin") {
+  const wc = aba("A conferir", ["Data", "Tiquete", "Cliente", "Placa", "Motorista", "Entrada", "Saída", "Peso Líquido (kg)", "O que conferir"],
+    conf.map(p => [br(p.data), p.ticket, p.cliente, p.placa, p.motorista, brHora(p.entrada_em), brHora(p.saida_em), p.liquido_kg, alertas(p)]), [11, 10, 26, 10, 14, 17, 17, 14, 45]);
+  wc.eachRow((r, i) => { if (i > 1) r.eachCell(c => c.fill = amarelo); });
+  }
+  const buf = await wb.xlsx.writeBuffer();
+  baixar(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+         `Geolux_expedicao_${$("#fDe").value}_a_${$("#fAte").value}.xlsx`);
+});
+
+function baixar(blob, nome) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nome; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+// ------------------------------------------------------------------ comprovante de retirada (PDF)
+$("#btComprovante").addEventListener("click", async () => {
+  if (!atual.length) await mostrarRelatorio();
+  const validas = atual.filter(x => x.situacao === "valida");
+  if (!validas.length) return msg("#relMsg", "aviso", "Não há carradas no período para gerar comprovante.");
+  const { data: cls } = await db.from("clientes").select("nome,nome_balanca,cpf_cnpj");
+  const doc = new jspdf.jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const clientes = [...new Set(validas.map(p => p.cliente))].sort();
+  clientes.forEach((c, i) => { if (i) doc.addPage(); paginaComprovante(doc, validas.filter(p => p.cliente === c), (cls || []).find(x => x.nome === c)); });
+  const de = $("#fDe").value, ate = $("#fAte").value;
+  const sufixo = clientes.length === 1 ? "_" + clientes[0].replace(/[^\w]+/g, "") : "_todos_clientes";
+  doc.save(nomeComprovante(de, ate, sufixo));
+});
+
+function nomeComprovante(de, ate, sufixo) {
+  return `${de === ate ? "RET-" + de.replace(/-/g, "") : "EXT-" + de.replace(/-/g, "") + "-" + ate.replace(/-/g, "")}${sufixo}.pdf`;
+}
+
+function paginaComprovante(doc, ps, cad) {
+  const de = ps[0].data, ate = ps[ps.length - 1].data, umDia = de === ate;
+  const cliente = ps[0].cliente;
+  const numero = `${umDia ? "RET-" + de.replace(/-/g, "") : "EXT-" + de.replace(/-/g, "") + "-" + ate.replace(/-/g, "")}-${cliente.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12)}`;
+  const azul = [31, 58, 95], W = 297, M = 10;
+  const total = ps.reduce((s, p) => s + p.liquido_kg, 0);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...azul); doc.text(EMPRESA, M, 14);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(110); doc.text(ENDERECO, M, 19);
+  doc.setFontSize(7); doc.text("DOCUMENTO", W - M, 12, { align: "right" });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text(numero, W - M, 17, { align: "right" });
+  doc.setDrawColor(...azul); doc.setLineWidth(0.6); doc.line(M, 22, W - M, 22);
+  doc.setFontSize(13); doc.text(umDia ? "Comprovante de retirada de material" : "Extrato de retiradas do período", M, 30);
+  // caixas de resumo
+  const prods = [...new Set(ps.map(p => p.produto || p.produto_balanca))].join(", ");
+  const caixas = [["CLIENTE", cad?.cpf_cnpj ? `${cliente}` : cliente, 0.24], ["PERÍODO", umDia ? br(de) : `${br(de)} a ${br(ate)}`, 0.2],
+                  ["PRODUTO", prods, 0.2], ["CARRADAS", String(ps.length), 0.1], ["TOTAL RETIRADO", ton(total) + " t", 0.26]];
+  let x = M; const larg = W - 2 * M;
+  for (const [rot, val, f] of caixas) {
+    const w = larg * f, destaque = rot === "TOTAL RETIRADO";
+    if (destaque) { doc.setFillColor(220, 230, 241); doc.rect(x, 34, w, 17, "F"); }
+    doc.setDrawColor(170); doc.setLineWidth(0.2); doc.rect(x, 34, w, 17);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(110); doc.text(rot, x + 2.5, 38.5);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(destaque ? 15 : 11); doc.setTextColor(...(destaque ? azul : [0, 0, 0]));
+    doc.text(doc.splitTextToSize(val, w - 5)[0], x + 2.5, 46);
+    x += w;
+  }
+  if (cad?.cpf_cnpj) { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(80); doc.text(`CPF/CNPJ ${cad.cpf_cnpj}`, M + 2.5, 50); }
+  doc.autoTable({
+    startY: 55, margin: { left: M, right: M, bottom: 14 },
+    head: [["#", "Tiquete", "Placa", "Motorista", "Produto", "Nº Nota", "Entrada", "Saída", "Tara (kg)", "Bruto (kg)", "Líquido (kg)", "Observação"]],
+    body: ps.map((p, i) => [i + 1, p.ticket, p.placa, p.motorista || "não informado", p.produto || p.produto_balanca, p.nota || "—", brHora(p.entrada_em), brHora(p.saida_em), kg(p.peso_entrada_kg), kg(p.peso_saida_kg), kg(p.liquido_kg), alertas(p)]),
+    foot: [["", "TOTAL", `${ps.length} carradas`, "", "", "", "", "", kg(ps.reduce((s, p) => s + p.peso_entrada_kg, 0)), kg(ps.reduce((s, p) => s + p.peso_saida_kg, 0)), kg(total), ""]],
+    styles: { fontSize: 7.5, cellPadding: 1.6 }, headStyles: { fillColor: azul, textColor: 255 },
+    footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [244, 245, 247] },
+    columnStyles: { 8: { halign: "right" }, 9: { halign: "right" }, 10: { halign: "right", fontStyle: "bold" }, 11: { textColor: [156, 87, 0], fontSize: 6.5, cellWidth: 50 } },
+    didDrawPage: d => { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(130);
+      doc.text(`${numero} · emitido em ${new Date().toLocaleString("pt-BR")}`, M, 205);
+      doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 205, { align: "right" }); },
+  });
+  let y = doc.lastAutoTable.finalY + 6;
+  if (y > 160) { doc.addPage(); y = 20; }
+  // verificação
+  const arquivos = [...new Map(ps.map(p => [p.sha256, p.arquivo_nome])).entries()];
+  const qr = qrcode(0, "M");
+  qr.addData(`${numero}|${cliente}|${ps.length} carradas|${total} kg|tiquetes ${ps.map(p => p.ticket).join(",")}|${arquivos.map(([s, a]) => a + ":" + s).join(";")}`);
+  qr.make();
+  doc.addImage(qr.createDataURL(4, 0), "GIF", M, y, 26, 26);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(0); doc.text("Como conferir:", M + 30, y + 3);
+  doc.setFont("helvetica", "normal");
+  const txt = ["Os dados acima foram lidos do relatório original da balança rodoviária, guardado no sistema.",
+               "O código abaixo identifica esse arquivo; se o arquivo for alterado, o código muda."]
+    .concat(arquivos.flatMap(([s, a]) => [`Arquivo da balança: ${a}`, `Código de verificação (SHA-256): ${s}`]));
+  doc.text(txt, M + 30, y + 7);
+  y += 44;
+  doc.setDrawColor(0); doc.setLineWidth(0.2);
+  doc.line(M + 20, y, M + 110, y); doc.line(W - M - 110, y, W - M - 20, y);
+  doc.setFontSize(8); doc.text("Geolux (expedição / balança)", M + 65, y + 4, { align: "center" });
+  doc.text("Cliente ou motorista: nome e documento", W - M - 65, y + 4, { align: "center" });
+}
+
+// ------------------------------------------------------------------ envio semanal ao cliente (administrador)
+let envio = [];
+const SITUACAO = { enviado: "enviado", de_acordo: "de acordo", contestado: "contestou" };
+function foneWhats(t) {
+  let n = String(t || "").replace(/\D/g, "").replace(/^0+/, "");
+  if (n.length === 10 || n.length === 11) n = "55" + n;
+  return n.length >= 12 ? n : "";
+}
+async function carregarEnvio() {
+  const de = $("#eDe").value, ate = $("#eAte").value;
+  msg("#envioMsg"); $("#tabEnvio").innerHTML = '<div class="vazio">Carregando…</div>';
+  try {
+    const [ps, { data: cls, error: e1 }, { data: evs, error: e2 }] = await Promise.all([buscar(de, ate),
+      db.from("clientes").select("id,nome,nome_balanca,cpf_cnpj,telefone"),
+      db.from("comprovante_envios").select("*").eq("de", de).eq("ate", ate).order("registrado_em")]);
+    if (e1 || e2) throw e1 || e2;
+    envio = [...new Set(ps.map(p => p.cliente_id))].map(id => {
+      const pc = ps.filter(p => p.cliente_id === id), cad = (cls || []).find(c => c.id === id);
+      const ev = (evs || []).filter(e => e.cliente_id === id);
+      return { id, cad, ps: pc, cliente: pc[0].cliente, kg: pc.reduce((s, p) => s + p.liquido_kg, 0), ev, ultimo: ev[ev.length - 1],
+               enviado: [...ev].reverse().find(e => e.tipo === "enviado") };
+    }).sort((a, b) => a.cliente.localeCompare(b.cliente));
+  } catch (e) { $("#tabEnvio").innerHTML = ""; return msg("#envioMsg", "erro", erroTxt(e)); }
+  if (!envio.length) return $("#tabEnvio").innerHTML = '<div class="vazio">Nenhuma carrada nesse período.</div>';
+  $("#tabEnvio").innerHTML = `<table><tr><th>Cliente</th><th>Telefone</th><th class="n">Carradas</th><th class="n">Toneladas</th><th>Situação</th><th></th></tr>` +
+    envio.map((c, i) => {
+      const u = c.ultimo, mudou = c.enviado && (c.enviado.carradas !== c.ps.length || c.enviado.total_kg !== c.kg);
+      const sit = u ? `${SITUACAO[u.tipo]} em ${new Date(u.registrado_em).toLocaleString("pt-BR")}${u.observacao ? ` (${esc(u.observacao)})` : ""}` : "não enviado";
+      return `<tr><td>${esc(c.cliente)}</td><td>${esc(c.cad?.telefone || "")}${foneWhats(c.cad?.telefone) ? "" : ' <span class="alerta">sem telefone válido</span>'}</td>` +
+        `<td class="n">${c.ps.length}</td><td class="n">${ton(c.kg)}</td>` +
+        `<td>${sit}${mudou ? ' <span class="alerta">os números mudaram depois do envio; envie de novo</span>' : ""}</td>` +
+        `<td><button class="mini" data-enviar="${i}">Enviar</button> <button class="mini" data-registrar="${i}" data-tipo="de_acordo">De acordo</button> <button class="mini" data-registrar="${i}" data-tipo="contestado">Contestou</button></td></tr>`;
+    }).join("") + "</table>";
+}
+async function registrarEnvio(c, tipo, observacao) {
+  const { error } = await db.from("comprovante_envios").insert({ cliente_id: c.id, de: $("#eDe").value, ate: $("#eAte").value, tipo,
+    carradas: c.ps.length, total_kg: c.kg, observacao: observacao || null, registrado_por: usuario.id });
+  if (error) throw error;
+}
+$("#tabEnvio").addEventListener("click", async e => {
+  const b = e.target; if (!b.dataset.enviar && !b.dataset.registrar) return;
+  const c = envio[b.dataset.enviar ?? b.dataset.registrar], de = $("#eDe").value, ate = $("#eAte").value;
+  try {
+    if (b.dataset.enviar) {
+      const periodo = de === ate ? `do dia ${br(de)}` : `de ${br(de)} a ${br(ate)}`;
+      const texto = `Olá! Aqui é da Geolux Mineradora. Segue o extrato das retiradas de ${c.cad?.nome || c.cliente} ${periodo}: ` +
+        `${c.ps.length} carradas, total de ${ton(c.kg)} t. No PDF em anexo está cada carrada, com tiquete, placa, motorista e pesos da balança. ` +
+        `Pode confirmar se está de acordo? Se algo não conferir, por favor nos avise.`;
+      const fone = foneWhats(c.cad?.telefone);
+      window.open(`https://wa.me/${fone}?text=${encodeURIComponent(texto)}`, "_blank");
+      const doc = new jspdf.jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      paginaComprovante(doc, c.ps, c.cad);
+      doc.save(nomeComprovante(de, ate, "_" + c.cliente.replace(/[^\w]+/g, "")));
+      await registrarEnvio(c, "enviado");
+      await carregarEnvio();
+      return msg("#envioMsg", "ok", `PDF de ${esc(c.cliente)} baixado e WhatsApp aberto${fone ? "" : " (sem telefone no cadastro: escolha o contato)"}. Anexe o PDF na conversa e envie.`);
+    } else {
+      const tipo = b.dataset.tipo;
+      const obs = prompt(tipo === "de_acordo" ? `${c.cliente} ficou de acordo. Observação (ex.: "ok pelo WhatsApp, João"):` : `${c.cliente} contestou. O que o cliente disse?`);
+      if (obs === null) return;
+      if (tipo === "contestado" && !obs.trim()) return alert("Descreva o que o cliente contestou.");
+      await registrarEnvio(c, tipo, obs.trim());
+    }
+    carregarEnvio();
+  } catch (err) { msg("#envioMsg", "erro", erroTxt(err)); }
+});
+$("#btEnvio").addEventListener("click", carregarEnvio);
+
+// ------------------------------------------------------------------ cadastros (administrador)
+async function carregarCadastros() {
+  const [{ data: ap }, { data: pr }, { data: cl }, { data: us }] = await Promise.all([
+    db.from("produto_apelidos").select("*").order("apelido"), db.from("produtos").select("*").order("nome"),
+    db.from("clientes").select("*").order("nome"), db.from("perfis").select("*").order("email")]);
+  const opcoes = sel => '<option value="">— escolher —</option>' + (pr || []).filter(p => p.ativo).map(p => `<option value="${p.id}" ${p.id === sel ? "selected" : ""}>${esc(p.nome)}</option>`).join("");
+  $("#tabApelidos").innerHTML = `<table><tr><th>Nome na balança</th><th>Produto do sistema</th></tr>` +
+    (ap || []).map(a => `<tr><td>${esc(a.apelido)}</td><td><select data-apelido="${esc(a.apelido)}">${opcoes(a.produto_id)}</select>${a.produto_id ? "" : ' <span class="alerta">sem associação</span>'}</td></tr>`).join("") + "</table>";
+  $("#tabProdutos").innerHTML = `<table><tr><th>Produto</th><th>Situação</th></tr>` +
+    (pr || []).map(p => `<tr><td>${esc(p.nome)}</td><td>${p.ativo ? "ativo" : "inativo"} <button class="mini" data-produto="${p.id}" data-ativo="${p.ativo}">${p.ativo ? "Desativar" : "Ativar"}</button></td></tr>`).join("") + "</table>";
+  $("#tabClientes").innerHTML = `<table><tr><th>Nome na balança</th><th>Nome completo</th><th>CPF/CNPJ</th><th>Telefone</th><th></th></tr>` +
+    (cl || []).map(c => `<tr data-cliente="${c.id}"><td>${esc(c.nome_balanca)}</td><td><input value="${esc(c.nome)}" data-campo="nome"></td><td><input value="${esc(c.cpf_cnpj)}" data-campo="cpf_cnpj"></td><td><input value="${esc(c.telefone)}" data-campo="telefone"></td><td><button class="mini" data-salvar="${c.id}">Salvar</button></td></tr>`).join("") + "</table>";
+  $("#tabUsuarios").innerHTML = `<table><tr><th>E-mail</th><th>Nome</th><th>Perfil</th></tr>` +
+    (us || []).map(u => `<tr><td>${esc(u.email)}</td><td>${esc(u.nome || "")}</td><td>${u.papel === "admin" ? "Administrador" : "Balança"}</td></tr>`).join("") + "</table>";
+}
+$("#tabApelidos").addEventListener("change", async e => {
+  const a = e.target.dataset.apelido; if (!a) return;
+  const { error } = await db.from("produto_apelidos").update({ produto_id: e.target.value || null }).eq("apelido", a);
+  if (error) alert(error.message); carregarCadastros();
+});
+$("#tabProdutos").addEventListener("click", async e => {
+  const id = e.target.dataset.produto; if (!id) return;
+  const { error } = await db.from("produtos").update({ ativo: e.target.dataset.ativo !== "true" }).eq("id", id);
+  if (error) alert(error.message); carregarCadastros(); carregarFiltros();
+});
+$("#btNovoProduto").addEventListener("click", async () => {
+  const nome = $("#novoProduto").value.trim(); if (!nome) return;
+  const { error } = await db.from("produtos").insert({ nome });
+  if (error) alert(error.message); $("#novoProduto").value = ""; carregarCadastros(); carregarFiltros();
+});
+$("#tabClientes").addEventListener("click", async e => {
+  const id = e.target.dataset.salvar; if (!id) return;
+  const tr = e.target.closest("tr"), dados = {};
+  tr.querySelectorAll("input").forEach(i => dados[i.dataset.campo] = i.value.trim() || null);
+  if (!dados.nome) return alert("O nome completo não pode ficar vazio.");
+  const { error } = await db.from("clientes").update(dados).eq("id", id);
+  if (error) alert(error.message); else { e.target.textContent = "Salvo"; carregarFiltros(); }
+});
+
+// ------------------------------------------------------------------ backup (administrador)
+$("#btBackup").addEventListener("click", async () => {
+  msg("#backupMsg", "aviso", "Gerando backup…");
+  try {
+    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "auditoria"];
+    const dados = {};
+    for (const t of tabelas) {
+      dados[t] = [];
+      for (let i = 0; ; i += 1000) {
+        const { data, error } = await db.from(t).select("*").range(i, i + 999);
+        if (error) throw error;
+        dados[t].push(...data);
+        if (data.length < 1000) break;
+      }
+    }
+    const quando = new Date(), carimbo = iso(quando) + "_" + String(quando.getHours()).padStart(2, "0") + String(quando.getMinutes()).padStart(2, "0");
+    baixar(new Blob([JSON.stringify({ gerado_em: quando.toISOString(), tabelas: dados }, null, 1)], { type: "application/json" }), `Geolux_backup_${carimbo}.json`);
+    const wb = new ExcelJS.Workbook();
+    for (const t of tabelas) {
+      const ws = wb.addWorksheet(t);
+      const cols = [...new Set(dados[t].flatMap(r => Object.keys(r)))];
+      ws.addRow(cols).font = { bold: true };
+      for (const r of dados[t]) ws.addRow(cols.map(c => r[c] !== null && typeof r[c] === "object" ? JSON.stringify(r[c]) : r[c]));
+    }
+    baixar(new Blob([await wb.xlsx.writeBuffer()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `Geolux_backup_${carimbo}.xlsx`);
+    msg("#backupMsg", "ok", `Backup gerado: ${dados.pesagens.length} carradas, ${dados.clientes.length} clientes, ${dados.importacoes.length} relatórios anexados.`);
+  } catch (e) { msg("#backupMsg", "erro", "Não foi possível gerar o backup. " + erroTxt(e)); }
+});
+
+iniciar();
+</script>
+</body>
+</html>
