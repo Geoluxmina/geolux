@@ -157,6 +157,9 @@
           <button class="bt" id="btGravar" disabled>Gravar no sistema</button>
           <button class="bt sec escondido" id="btRemover">Remover arquivo</button>
         </div>
+        <label data-admin style="display:flex;gap:8px;align-items:center;margin-top:10px;font-weight:normal">
+          <input type="checkbox" id="historico" style="width:auto"> Relatórios antigos (só guardar no banco: sem e-mail de aviso e sem conferência da balança)
+        </label>
         <p style="color:var(--suave);margin:10px 0 0;font-size:13px">
           Na balança, gere o relatório filtrado só pela data do dia, com todos os clientes e produtos.
           Anexar o mesmo arquivo ou o mesmo tiquete duas vezes não duplica nada.</p>
@@ -510,6 +513,9 @@ $("#arquivo").addEventListener("change", async e => {
     const placasNovas = [...new Set(r.pesagens.map(p => normPlaca(p.placa)))].filter(x => x && !placasConhecidas.has(x));
     if (placasNovas.length) html += `<div class="msg aviso">Placa(s) sem cadastro: ${placasNovas.map(esc).join(", ")}. Pode gravar normalmente; cadastre depois em Cadastros &gt; Placas.</div>`;
     if (semProduto.length) html += `<div class="msg aviso">Nome de produto novo na balança: ${semProduto.map(esc).join(", ")}. Grave normalmente; o administrador associa em Cadastros.</div>`;
+    const limiteAntigo = iso(new Date(Date.now() - 7 * 86400000));
+    if (papel === "admin" && !$("#historico").checked && r.pesagens.length && r.pesagens.every(p => p.saida_em.slice(0, 10) < limiteAntigo))
+      html += `<div class="msg aviso">Todas as carradas deste relatório têm mais de 7 dias. Se for um relatório antigo, marque "Relatórios antigos" acima antes de gravar.</div>`;
     html += tabelaPesagens(r.pesagens.map(p => ({ ...p, produto: conhecidos.get(p.produto_balanca.toLowerCase()) ? "ok" : null }))) + "</div>";
     if (!ja && r.pesagens.length) lidos.push({ nome: f.name, buf, hash, ...r });
   }
@@ -534,15 +540,15 @@ function tabelaPesagens(ps) {
 $("#btGravar").addEventListener("click", async () => {
   $("#btGravar").disabled = true;
   let html = "";
-  const gravados = [];
+  const gravados = [], historico = papel === "admin" && $("#historico").checked;
   for (const r of lidos) {
     try {
       const caminho = `${r.pesagens[0].saida_em.slice(0, 7)}/${r.hash.slice(0, 16)}_${Date.now()}_${r.nome.replace(/[^\w.-]+/g, "_")}`;
       const up = await db.storage.from(BUCKET).upload(caminho, new Blob([r.buf], { type: "application/pdf" }));
       if (up.error) throw up.error;
       const imp = await db.from("importacoes").insert({ arquivo_nome: r.nome, sha256: r.hash, caminho_storage: caminho,
-        carradas_lidas: r.soma.carradas, total_liquido_kg: r.soma.liquido, totais_conferem: r.confere, importado_por: usuario.id }).select("id").single();
-      if (imp.error) throw imp.error;
+        carradas_lidas: r.soma.carradas, total_liquido_kg: r.soma.liquido, totais_conferem: r.confere, importado_por: usuario.id, ...(historico ? { historico: true } : {}) }).select("id").single();
+      if (imp.error) throw /historico/.test(imp.error.message || "") ? new Error("Para anexar relatórios antigos, rode antes a query 008 no Supabase.") : imp.error;
       const clientes = [...new Set(r.pesagens.map(p => p.cliente_balanca))].map(c => ({ nome_balanca: c, nome: c }));
       let res = await db.from("clientes").upsert(clientes, { onConflict: "nome_balanca", ignoreDuplicates: true });
       if (res.error) throw res.error;
@@ -562,7 +568,12 @@ $("#btGravar").addEventListener("click", async () => {
         reativadas = rv.data || 0;
       }
       const repetidas = jaExistiam.length - reativadas;
-      gravados.push({ id: imp.data.id, nome: r.nome });
+      // relatório antigo já entra conferido e visto, para não encher a fila de conferência
+      if (historico) {
+        res = await db.from("conferencias").insert({ importacao_id: imp.data.id, observacao: "Relatório antigo, anexado como histórico", enviado_por: usuario.id });
+        if (!res.error) res = await db.from("conferencias_vistas").insert({ importacao_id: imp.data.id, visto_por: usuario.id });
+        if (res.error) throw res.error;
+      } else gravados.push({ id: imp.data.id, nome: r.nome });
       html += `<div class="msg ok">${esc(r.nome)}: ${gravadas.size + reativadas} carradas gravadas${repetidas ? `, ${repetidas} já existiam e foram ignoradas` : ""}.</div>`;
     } catch (err) {
       html += `<div class="msg erro">${esc(r.nome)}: não foi gravado. ${erroTxt(err)}</div>`;
