@@ -16,6 +16,7 @@
   body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--texto); background:#fff; }
   header { background:var(--azul); color:#fff; padding:10px 16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
   header h1 { font-size:17px; margin:0; font-weight:600; }
+  .pergunta { position:sticky; bottom:0; z-index:5; background:#fff; margin-bottom:0; border:2px solid var(--azul); box-shadow:0 -4px 12px rgba(0,0,0,.12); }
   header .logo { height:38px; background:#fff; border-radius:6px; padding:4px 8px; }
   #login .logo { display:block; height:56px; margin:0 auto 12px; }
   header .quem { margin-left:auto; font-size:13px; opacity:.9; }
@@ -158,8 +159,6 @@
           <label>Relatório da balança (PDF)
             <input type="file" id="arquivo" accept="application/pdf" multiple>
           </label>
-          <button class="bt" id="btGravar" disabled>Gravar no sistema</button>
-          <button class="bt sec escondido" id="btRemover">Remover arquivo</button>
         </div>
         <label data-admin style="display:flex;gap:8px;align-items:center;margin-top:10px;font-weight:normal">
           <input type="checkbox" id="historico" style="width:auto"> Relatórios antigos (só guardar no banco: sem e-mail de aviso e sem conferência da balança)
@@ -169,6 +168,13 @@
           Anexar o mesmo arquivo ou o mesmo tiquete duas vezes não duplica nada.</p>
       </div>
       <div id="previa"></div>
+      <div class="card pergunta escondido" id="pergunta">
+        <b id="perguntaTxt"></b>
+        <div class="linha" style="margin-top:10px">
+          <button class="bt" id="btGravar" disabled>Sim, salvar</button>
+          <button class="bt sec" id="btRemover">Não, descartar</button>
+        </div>
+      </div>
       <div id="conferencia"></div>
       <div class="card">
         <h3 style="margin-top:0">Relatórios já anexados</h3>
@@ -472,7 +478,7 @@ document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click
 // ------------------------------------------------------------------ anexar relatório
 let lidos = [];
 $("#arquivo").addEventListener("change", async e => {
-  lidos = []; $("#btGravar").disabled = true; $("#previa").innerHTML = '<div class="vazio">Lendo…</div>';
+  lidos = []; $("#btGravar").disabled = true; $("#pergunta").classList.add("escondido"); $("#previa").innerHTML = '<div class="vazio">Lendo…</div>';
   const { data: apelidos } = await db.from("produto_apelidos").select("apelido,produto_id");
   const conhecidos = new Map((apelidos || []).map(a => [a.apelido, a.produto_id]));
   const { data: placasCad } = await db.from("placas").select("placa");
@@ -527,13 +533,19 @@ $("#arquivo").addEventListener("change", async e => {
   }
   $("#previa").innerHTML = html || '<div class="vazio">Nenhum arquivo.</div>';
   $("#btGravar").disabled = !lidos.length;
-  $("#btRemover").classList.remove("escondido");
+  $("#btGravar").classList.toggle("escondido", !lidos.length);
+  const nC = lidos.reduce((t, r) => t + r.pesagens.length, 0), nKg = lidos.reduce((t, r) => t + r.soma.liquido, 0);
+  $("#perguntaTxt").textContent = lidos.length
+    ? `Deseja salvar ${lidos.length > 1 ? `estes ${lidos.length} anexos` : "este anexo"} no sistema? (${nC} carradas, ${ton(nKg)} t)`
+    : "Não há nada novo para salvar. Descartar o arquivo?";
+  $("#btRemover").textContent = lidos.length ? "Não, descartar" : "Descartar";
+  $("#pergunta").classList.remove("escondido");
 });
 
 // antes de gravar, nada foi para o sistema: remover só limpa a tela
 function limparAnexo() {
   lidos = []; $("#arquivo").value = ""; $("#previa").innerHTML = "";
-  $("#btGravar").disabled = true; $("#btRemover").classList.add("escondido"); msg("#anexosMsg");
+  $("#btGravar").disabled = true; $("#pergunta").classList.add("escondido"); msg("#anexosMsg");
 }
 $("#btRemover").addEventListener("click", limparAnexo);
 
