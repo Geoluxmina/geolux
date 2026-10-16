@@ -28,10 +28,21 @@
   header .logo { height:38px; background:#fff; border-radius:6px; padding:4px 8px; }
   #login .logo { display:block; height:56px; margin:0 auto 12px; }
   header .quem { margin-left:auto; font-size:13px; opacity:.9; }
-  nav { display:flex; gap:4px; padding:8px 16px 0; border-bottom:1px solid var(--borda); flex-wrap:wrap; }
-  nav button { border:1px solid transparent; border-bottom:none; background:none; padding:8px 14px; border-radius:8px 8px 0 0; cursor:pointer; font-size:14px; color:var(--suave); }
-  nav button.ativo { border-color:var(--borda); background:#fff; color:var(--azul); font-weight:600; margin-bottom:-1px; }
-  main { padding:16px; max-width:1400px; margin:0 auto; }
+  #app:not(.escondido) { display:flex; align-items:flex-start; }
+  nav { width:210px; flex:none; position:sticky; top:0; max-height:100vh; overflow-y:auto; box-sizing:border-box; padding:12px 10px; border-right:1px solid var(--borda); background:var(--cinza); min-height:calc(100vh - 58px); }
+  nav .grupo { margin-bottom:16px; }
+  nav h4 { margin:4px 8px 6px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--azul); }
+  nav button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 10px; border-radius:6px; cursor:pointer; font-size:14px; color:var(--texto); }
+  nav button:hover { background:var(--azul2); }
+  nav button.ativo { background:var(--azul); color:#fff; font-weight:600; }
+  main { padding:16px; flex:1; min-width:0; max-width:1400px; }
+  @media (max-width:800px) {
+    #app:not(.escondido) { flex-direction:column; align-items:stretch; }
+    nav { width:auto; position:static; min-height:0; max-height:none; border-right:none; border-bottom:1px solid var(--borda); padding:8px; }
+    nav .grupo { margin:0 0 6px; display:flex; flex-wrap:wrap; gap:4px; }
+    nav h4 { width:100%; margin:2px 4px; }
+    nav button { white-space:nowrap; width:auto; padding:7px 10px; border:1px solid var(--borda); background:#fff; }
+  }
   .card { border:1px solid var(--borda); border-radius:10px; padding:16px; margin-bottom:16px; }
   .linha { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
   label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--suave); }
@@ -108,14 +119,26 @@
 
 <div id="app" class="escondido">
   <nav id="abas">
-    <button data-aba="painel">Painel</button>
-    <button data-aba="anexar" class="ativo">Anexar relatório</button>
-    <button data-aba="relatorios">Relatórios</button>
-    <button data-aba="conferir" data-admin>A conferir</button>
-    <button data-aba="envio" data-admin>Envio semanal</button>
-    <button data-aba="cadastros">Cadastros</button>
-    <button data-aba="diesel" class="escondido">Diesel</button>
-    <button data-aba="fechamento" data-admin>Backup</button>
+    <div class="grupo" data-grupo="pesagem">
+      <h4>Controle de pesagem</h4>
+      <button data-aba="painel">Painel</button>
+      <button data-aba="anexar" class="ativo">Anexar relatório</button>
+      <button data-aba="relatorios">Relatórios</button>
+      <button data-aba="conferir" data-admin>A conferir</button>
+      <button data-aba="envio" data-admin>Envio semanal</button>
+      <button data-aba="cadastros">Cadastros</button>
+    </div>
+    <div class="grupo" data-grupo="diesel">
+      <h4>Controle de Diesel</h4>
+      <button data-aba="diesel" data-parte="abastecer">Abastecer máquina</button>
+      <button data-aba="diesel" data-parte="cargas">Cargas de diesel</button>
+      <button data-aba="diesel" data-parte="consumo">Consumo e histórico</button>
+      <button data-aba="diesel" data-parte="maquinas">Máquinas</button>
+    </div>
+    <div class="grupo" data-grupo="sistema" data-admin>
+      <h4>Sistema</h4>
+      <button data-aba="fechamento">Backup</button>
+    </div>
   </nav>
   <main>
     <!-- PAINEL (os dois usuários) -->
@@ -304,8 +327,9 @@
 
     <!-- DIESEL (administrador e encarregado do diesel) -->
     <section id="aba-diesel" class="escondido">
-      <div id="dPend"></div>
-      <div class="card">
+      <div id="dFila" data-parte="abastecer cargas consumo maquinas"></div>
+      <div id="dPend" data-parte="abastecer consumo"></div>
+      <div class="card" data-parte="abastecer">
         <h3 style="margin-top:0">Abastecer máquina</h3>
         <div class="linha">
           <label>Carga de diesel <select id="daCarga"></select></label>
@@ -322,7 +346,7 @@
         <button class="bt" id="btAbastecer">Salvar abastecimento</button>
         <div id="daMsg"></div>
       </div>
-      <div class="card">
+      <div class="card" data-parte="cargas">
         <h3 style="margin-top:0">Cargas de diesel</h3>
         <details id="dcBox"><summary><b>+ Nova carga (retirada no posto)</b></summary>
           <div class="linha">
@@ -339,19 +363,19 @@
         <div id="dcMsg"></div>
         <div class="tabela" id="tabCargas"></div>
       </div>
-      <div class="card">
+      <div class="card" data-parte="consumo">
         <h3 style="margin-top:0">Consumo por máquina</h3>
         <div class="linha"><label>De <input type="date" id="dDe"></label><label>Até <input type="date" id="dAte"></label></div>
         <div id="dKpis" class="linha" style="margin:12px 0"></div>
         <p style="color:var(--suave);font-size:13px;margin-top:0">L/h é calculado entre dois abastecimentos com tanque cheio: litros colocados ÷ horas trabalhadas entre eles. Custo usa o preço por litro da nota de cada carga.</p>
         <div class="tabela" id="tabConsumo"></div>
       </div>
-      <div class="card">
+      <div class="card" data-parte="consumo abastecer">
         <h3 style="margin-top:0">Abastecimentos</h3>
         <div class="linha" style="margin-bottom:10px"><label>Máquina <select id="dfMaquina"></select></label><label>Carga <select id="dfCarga"></select></label></div>
         <div class="tabela" id="tabAbast"></div>
       </div>
-      <div class="card">
+      <div class="card" data-parte="maquinas">
         <h3 style="margin-top:0">Máquinas</h3>
         <div class="linha">
           <label>Nome <input id="dmNome" placeholder="Escavadeira CAT 320"></label>
@@ -386,6 +410,11 @@ const ENDERECO = "Sítio Canta Galo, Bairro Canta Galo, Acarape - CE, CEP 62785-
 const BUCKET = "relatorios-balanca";
 const db = window.__TEST_DB || supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let papel = null, usuario = null;
+const FILA = "geolux_diesel_fila", CACHE_DZ = "geolux_diesel_dados", CACHE_PERFIL = "geolux_perfil";
+const lerJson = (k, padrao) => { try { return JSON.parse(localStorage.getItem(k)) ?? padrao; } catch { return padrao; } };
+const salvarJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
+const semRede = e => !navigator.onLine || /Failed to fetch|NetworkError|Load failed|network|fetch/i.test(e?.message || String(e));
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 const NOMES_PAPEL = { admin: "Administrador", balanca: "Balança", diesel: "Diesel" };
 
 // ------------------------------------------------------------------ utilidades
@@ -508,21 +537,29 @@ window.__interpretar = interpretar; window.__lerPdf = lerPdf;
 
 // ------------------------------------------------------------------ login
 async function iniciar() {
-  const { data: { session } } = await db.auth.getSession();
-  if (!session) { $("#login").classList.remove("escondido"); $("#app").classList.add("escondido"); return; }
-  usuario = session.user;
-  const { data: perfil } = await db.from("perfis").select("papel,nome").eq("user_id", usuario.id).maybeSingle();
+  let session = null;
+  try { ({ data: { session } } = await db.auth.getSession()); } catch {}
+  // sem internet (ex.: na mina), entra com o último login guardado neste aparelho
+  const salvo = lerJson(CACHE_PERFIL, null);
+  if (!session && !(salvo && !navigator.onLine)) { $("#login").classList.remove("escondido"); $("#app").classList.add("escondido"); return; }
+  usuario = session?.user || { id: salvo.user_id, email: salvo.email };
+  let perfil = null, erroPerfil = null;
+  if (session) ({ data: perfil, error: erroPerfil } = await db.from("perfis").select("papel,nome").eq("user_id", usuario.id).maybeSingle());
+  if ((!session || (erroPerfil && semRede(erroPerfil))) && salvo?.user_id === usuario.id) perfil = salvo;
+  if (!perfil && erroPerfil) return msg("#loginMsg", "erro", "Sem internet e sem login guardado neste aparelho. Entre uma vez com internet.");
   if (!perfil) { msg("#loginMsg", "erro", "Este usuário ainda não tem perfil no sistema. Peça ao administrador para liberar."); await db.auth.signOut({ scope: "local" }); return; }
+  salvarJson(CACHE_PERFIL, { user_id: usuario.id, email: usuario.email, papel: perfil.papel, nome: perfil.nome });
   papel = perfil.papel;
   $("#quem").textContent = `${perfil.nome || usuario.email} · ${NOMES_PAPEL[papel] || papel}`;
   $("#sair").classList.remove("escondido");
   document.querySelectorAll("[data-admin]").forEach(b => b.classList.toggle("escondido", papel !== "admin"));
-  document.querySelector('#abas [data-aba="diesel"]').classList.toggle("escondido", papel !== "admin");
+  // balança: só pesagem; encarregado do diesel: só diesel; administrador: tudo
+  document.querySelector('#abas [data-grupo="diesel"]').classList.toggle("escondido", papel === "balanca");
+  document.querySelector('#abas [data-grupo="pesagem"]').classList.toggle("escondido", papel === "diesel");
   $("#login").classList.add("escondido"); $("#app").classList.remove("escondido");
-  // encarregado do diesel: só a aba Diesel
+  if (papel !== "balanca") enviarFila();
   if (papel === "diesel") {
-    document.querySelectorAll("#abas button").forEach(b => b.classList.toggle("escondido", b.dataset.aba !== "diesel"));
-    document.querySelector('#abas [data-aba="diesel"]').click();
+    document.querySelector('#abas [data-parte="abastecer"]').click();
     return;
   }
   const hoje = iso(new Date());
@@ -543,11 +580,17 @@ $("#formLogin").addEventListener("submit", async e => {
   msg("#loginMsg"); iniciar();
 });
 // sair só deste computador; o mesmo login continua aberto nos outros
-$("#sair").addEventListener("click", async () => { await db.auth.signOut({ scope: "local" }); location.reload(); });
+$("#sair").addEventListener("click", async () => {
+  const n = lerJson(FILA, []).length;
+  if (n && !confirm(`Há ${n} abastecimento(s) guardado(s) neste aparelho esperando internet. Eles continuam guardados, mas só são enviados quando alguém entrar de novo neste aparelho.\n\nSair assim mesmo?`)) return;
+  try { localStorage.removeItem(CACHE_PERFIL); } catch {}
+  await db.auth.signOut({ scope: "local" }); location.reload();
+});
 
 document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("#abas button").forEach(x => x.classList.toggle("ativo", x === b));
   document.querySelectorAll("main > section").forEach(s => s.classList.toggle("escondido", s.id !== "aba-" + b.dataset.aba));
+  if (b.dataset.parte) document.querySelectorAll("#aba-diesel [data-parte]").forEach(c => c.classList.toggle("escondido", !c.dataset.parte.split(" ").includes(b.dataset.parte)));
   if (b.dataset.aba === "cadastros") carregarCadastros();
   if (b.dataset.aba === "conferir") mostrarConferir();
   if (b.dataset.aba === "anexar") carregarAnexos();
@@ -1340,7 +1383,7 @@ iniciar();
 
 // ------------------------------------------------------------------ diesel
 const BUCKET_DIESEL = "diesel";
-let dz = { cargas: [], abs: [], maquinas: [] };
+let dz = { cargas: [], abs: [], maquinas: [] }, dzOffline = false;
 const lit = n => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
 const real = n => n == null || isNaN(n) ? "—" : Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const agoraLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
@@ -1360,14 +1403,14 @@ async function todasLinhas(tabela, ordem) {
 }
 
 // foto do celular fica pequena (até 1600 px) para não encher o armazenamento
-async function comprimirFoto(f) {
+async function comprimirFoto(f, max = 1600, qualidade = 0.75) {
   if (!f.type.startsWith("image/")) return f;
   try {
     const img = await createImageBitmap(f);
-    const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const k = Math.min(1, max / Math.max(img.width, img.height));
     const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
     c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    return await new Promise(r => c.toBlob(b => r(b || f), "image/jpeg", 0.75));
+    return await new Promise(r => c.toBlob(b => r(b || f), "image/jpeg", qualidade));
   } catch { return f; }
 }
 async function enviarFotoDiesel(pasta, f) {
@@ -1382,7 +1425,7 @@ async function enviarFotoDiesel(pasta, f) {
 async function abrirFotoDiesel(caminho) {
   const janela = window.open("", "_blank");
   const { data, error } = await db.storage.from(BUCKET_DIESEL).createSignedUrl(caminho, 600);
-  if (error) { janela?.close(); return msg("#dPend", "erro", "Não foi possível abrir o arquivo. " + erroTxt(error)); }
+  if (error) { janela?.close(); return msg("#dFila", "erro", "Não foi possível abrir o arquivo. " + erroTxt(error)); }
   if (janela) janela.location = data.signedUrl; else location.href = data.signedUrl;
 }
 
@@ -1426,18 +1469,77 @@ function calcularConsumo() {
   }
 }
 
+const novoId = () => globalThis.crypto?.randomUUID ? crypto.randomUUID()
+  : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c => (c ^ Math.random() * 16 >> c / 4).toString(16));
+async function fotoParaTexto(f) {
+  const blob = await comprimirFoto(f, 1024, 0.6);
+  return await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.onerror = () => r(null); fr.readAsDataURL(blob); });
+}
+
+function mostrarFila() {
+  const fila = lerJson(FILA, []), comErro = fila.filter(i => i.erro);
+  const maq = id => esc(dz.maquinas.find(m => m.id === id)?.nome || "máquina");
+  let h = "";
+  if (dzOffline) h += `<div class="msg aviso"><b>Sem internet.</b> Mostrando os dados guardados neste aparelho em ${dataHora(dzOffline)}. Pode lançar abastecimentos normalmente; eles são enviados quando o celular pegar sinal. Cargas novas e fechamento de carga precisam de internet.</div>`;
+  if (fila.length - comErro.length) h += `<div class="msg aviso"><b>${fila.length - comErro.length} abastecimento(s) guardado(s) neste celular</b> esperando internet para enviar. Não saia do sistema nem limpe os dados do navegador até enviar. <button class="mini" id="btEnviarFila">Enviar agora</button></div>`;
+  for (const i of comErro) h += `<div class="msg erro">Não foi possível enviar o abastecimento de ${maq(i.dados.maquina_id)} (${lit(i.dados.litros)} L, ${lit(i.dados.horimetro)}) de ${dataHora(i.dados.abastecido_em)}: ${esc(i.erro)} <button class="mini" data-fila-descartar="${i.dados.id_local}">Descartar</button> <button class="mini" data-fila-tentar="${i.dados.id_local}">Tentar de novo</button></div>`;
+  $("#dFila").innerHTML = h;
+}
+
+let enviandoFila = false;
+async function enviarFila() {
+  if (enviandoFila || !navigator.onLine || !lerJson(FILA, []).some(i => !i.erro)) return;
+  enviandoFila = true;
+  const resultado = new Map();
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if (!session) { msg("#dFila", "erro", "Há abastecimentos guardados neste celular, mas o login expirou. Saia e entre de novo com internet para enviar."); return; }
+    for (const i of lerJson(FILA, []).filter(i => !i.erro)) {
+      try {
+        let foto = null;
+        if (i.foto) foto = await enviarFotoDiesel("abastecimentos", await (await fetch(i.foto)).blob());
+        const { error } = await db.from("diesel_abastecimentos").upsert({ ...i.dados, foto_caminho: foto, registrado_por: session.user.id }, { onConflict: "id_local", ignoreDuplicates: true });
+        if (error) throw error;
+        resultado.set(i.dados.id_local, null);
+      } catch (e) {
+        if (semRede(e)) break;
+        resultado.set(i.dados.id_local, e.message || String(e));
+      }
+    }
+  } catch {} finally {
+    // relê a fila: pode ter entrado abastecimento novo enquanto enviava
+    const fila = lerJson(FILA, []).filter(i => !(resultado.has(i.dados.id_local) && resultado.get(i.dados.id_local) === null));
+    for (const i of fila) if (resultado.get(i.dados.id_local)) i.erro = resultado.get(i.dados.id_local);
+    salvarJson(FILA, fila);
+    enviandoFila = false;
+  }
+  if ([...resultado.values()].length && !$("#aba-diesel").classList.contains("escondido")) carregarDiesel();
+}
+window.addEventListener("online", () => { if (usuario && papel !== "balanca") enviarFila(); });
+setInterval(() => { if (usuario && papel !== "balanca") enviarFila(); }, 60000);
+
 async function carregarDiesel() {
   if (!$("#daQuando").value) $("#daQuando").value = agoraLocal();
   if (!$("#dcQuando").value) $("#dcQuando").value = agoraLocal();
   if (!$("#dDe").value) { const h = new Date(); $("#dDe").value = iso(new Date(h.getFullYear(), h.getMonth(), 1)); $("#dAte").value = iso(h); }
+  dzOffline = false;
   try {
+    if (!navigator.onLine) throw new Error("Failed to fetch");
     const [cargas, abs, maquinas] = await Promise.all([todasLinhas("diesel_cargas", "retirado_em"), todasLinhas("diesel_abastecimentos", "abastecido_em"), todasLinhas("maquinas", "nome")]);
     dz = { cargas, abs, maquinas };
+    salvarJson(CACHE_DZ, { ...dz, em: new Date().toISOString() });
   } catch (e) {
-    const falta = /does not exist|schema cache/i.test(e.message || "");
-    return msg("#dPend", "erro", falta ? "O controle de diesel ainda não foi ligado no banco. Rode a query 009 no Supabase." : "Não foi possível carregar o diesel. " + erroTxt(e));
+    const guardado = lerJson(CACHE_DZ, null);
+    if (semRede(e) && guardado) { dz = { cargas: guardado.cargas, abs: guardado.abs, maquinas: guardado.maquinas }; dzOffline = guardado.em; }
+    else {
+      const falta = /does not exist|schema cache/i.test(e.message || "");
+      return msg("#dFila", "erro", falta ? "O controle de diesel ainda não foi ligado no banco. Rode a query 009 no Supabase."
+        : semRede(e) ? "Sem internet, e este aparelho ainda não guardou os dados do diesel. Abra esta tela uma vez com internet." : "Não foi possível carregar o diesel. " + erroTxt(e));
+    }
   }
-  msg("#dPend");
+  // abastecimentos guardados no aparelho entram nas contas até serem enviados
+  for (const i of lerJson(FILA, [])) dz.abs.push({ ...i.dados, id: "local-" + i.dados.id_local, situacao: "valida", pendente: true, registrado_em: i.criado });
+  mostrarFila();
   calcularConsumo();
   const ativas = dz.maquinas.filter(m => m.ativo);
   const abertas = dz.cargas.filter(c => c.situacao === "aberta").sort((x, y) => x.retirado_em < y.retirado_em ? 1 : -1);
@@ -1514,7 +1616,7 @@ function mostrarAbastecimentos() {
       const m = maq.get(a.maquina_id), u = unid(m);
       const cons = a.lh != null ? `${lit(a.lh)} L/${u}` + (a.desvio != null && Math.abs(a.desvio) > 0.3 ? ` <span class="alerta">(${a.desvio > 0 ? "+" : ""}${Math.round(a.desvio * 100)}%)</span>` : "") : "—";
       return `<tr><td>${dataHora(a.abastecido_em)}</td><td>${esc(m?.nome)}</td><td>${esc(cod.get(a.carga_id))}</td><td class="n">${lit(a.horimetro)} ${u}</td><td class="n">${a.horas != null ? lit(a.horas) + " " + u : "—"}</td><td class="n"><b>${lit(a.litros)}</b></td><td>${a.tanque_cheio ? "cheio" : "parcial"}</td><td class="n">${cons}</td><td class="n">${real(a.custo)}</td><td>${esc(a.operador || "—")}</td><td>${esc(a.observacao || "")}</td>` +
-        `<td>${a.foto_caminho ? `<button class="mini" data-dfoto="${esc(a.foto_caminho)}">Foto</button> ` : ""}<button class="mini" data-dcancelar-abast="${a.id}">Cancelar</button></td></tr>`;
+        `<td>${a.pendente ? '<span class="alerta">guardado no celular</span>' : `${a.foto_caminho ? `<button class="mini" data-dfoto="${esc(a.foto_caminho)}">Foto</button> ` : ""}<button class="mini" data-dcancelar-abast="${a.id}">Cancelar</button>`}</td></tr>`;
     }).join("") + "</table>";
 }
 
@@ -1565,17 +1667,36 @@ $("#btAbastecer").addEventListener("click", async () => {
   if (!m) return msg("#daMsg", "erro", "Escolha a máquina.");
   if (hori == null || isNaN(hori)) return msg("#daMsg", "erro", `Digite o ${m.medida === "km" ? "hodômetro" : "horímetro"} atual da máquina.`);
   if (!litros || litros <= 0) return msg("#daMsg", "erro", "Digite os litros abastecidos.");
+  const quando = new Date($("#daQuando").value).toISOString();
+  const antes = dz.abs.filter(a => a.maquina_id === m.id && a.situacao === "valida" && a.abastecido_em <= quando).map(a => Number(a.horimetro));
+  if (antes.length && hori < Math.max(...antes)) return msg("#daMsg", "erro", `${m.medida === "km" ? "Hodômetro" : "Horímetro"} ${lit(hori)} é menor que o do abastecimento anterior desta máquina (${lit(Math.max(...antes))}). Confira o número.`);
   const restante = saldoCarga(carga).restante;
   if (litros > restante + 0.5 && !confirm(restante > 0
       ? `Pela conta do sistema a carga ${carga.codigo} só tem ${lit(restante)} L, e você está lançando ${lit(litros)} L.\n\nSalvar assim mesmo?`
       : `Pela conta do sistema a carga ${carga.codigo} já acabou${restante < -0.5 ? ` (já passou ${lit(-restante)} L)` : ""}.\nSe chegou diesel novo, abra uma nova carga antes.\n\nSalvar nesta carga assim mesmo?`)) return;
   $("#btAbastecer").disabled = true; msg("#daMsg", "ok", "Salvando…");
+  const dados = { id_local: novoId(), carga_id: carga.id, maquina_id: m.id, abastecido_em: quando, horimetro: hori, litros, tanque_cheio: $("#daCheio").checked,
+    operador: $("#daOperador").value.trim() || null, observacao: $("#daObs").value.trim() || null };
+  const arquivo = $("#daFoto").files[0];
+  let guardado = false;
   try {
-    const foto = await enviarFotoDiesel("abastecimentos", $("#daFoto").files[0]);
-    const { error } = await db.from("diesel_abastecimentos").insert({ carga_id: carga.id, maquina_id: m.id, abastecido_em: new Date($("#daQuando").value).toISOString(),
-      horimetro: hori, litros, tanque_cheio: $("#daCheio").checked, operador: $("#daOperador").value.trim() || null, foto_caminho: foto,
-      observacao: $("#daObs").value.trim() || null, registrado_por: usuario.id });
+    if (!navigator.onLine) throw new Error("Failed to fetch");
+    const foto = await enviarFotoDiesel("abastecimentos", arquivo);
+    const { error } = await db.from("diesel_abastecimentos").upsert({ ...dados, foto_caminho: foto, registrado_por: usuario.id }, { onConflict: "id_local", ignoreDuplicates: true });
     if (error) throw error;
+  } catch (e) {
+    if (!semRede(e)) { msg("#daMsg", "erro", "Não foi salvo. " + erroTxt(e)); $("#btAbastecer").disabled = false; return; }
+    // sem sinal: guarda no aparelho e envia sozinho quando a internet voltar
+    const fotoGuardada = arquivo ? await fotoParaTexto(arquivo) : null;
+    const fila = lerJson(FILA, []);
+    fila.push({ dados, foto: fotoGuardada, criado: new Date().toISOString() });
+    if (!salvarJson(FILA, fila)) {
+      fila[fila.length - 1].foto = null;
+      if (!salvarJson(FILA, fila)) { msg("#daMsg", "erro", "Não foi possível guardar no aparelho (memória cheia). Anote no papel e lance quando tiver internet."); $("#btAbastecer").disabled = false; return; }
+    }
+    guardado = true;
+  }
+  try {
     for (const id of ["#daHori", "#daLitros", "#daObs", "#daFoto"]) $(id).value = "";
     $("#daQuando").value = agoraLocal(); $("#daCheio").checked = true;
     await carregarDiesel();
@@ -1585,6 +1706,7 @@ $("#btAbastecer").addEventListener("click", async () => {
     if (novo?.horas != null) t += ` Trabalhou ${lit(novo.horas)} ${u} desde o último abastecimento.`;
     if (novo?.lh != null) t += ` Consumo: <b>${lit(novo.lh)} L/${u}</b>.`;
     const desvio = novo?.desvio != null && Math.abs(novo.desvio) > 0.3;
+    if (guardado) t += " <b>Sem internet: ficou guardado neste celular e será enviado sozinho quando pegar sinal.</b>";
     msg("#daMsg", desvio ? "aviso" : "ok", t + (desvio ? ` Está ${Math.round(Math.abs(novo.desvio) * 100)}% ${novo.desvio > 0 ? "acima" : "abaixo"} da média da máquina (${lit(media)} L/${u}). Confira o horímetro e os litros.` : ""));
   } catch (e) { msg("#daMsg", "erro", "Não foi salvo. " + erroTxt(e)); }
   $("#btAbastecer").disabled = false;
@@ -1608,7 +1730,7 @@ $("#btCarga").addEventListener("click", async () => {
     await carregarDiesel();
     $("#daCarga").value = data.id;
     msg("#dcMsg", "ok", `Carga <b>${esc(data.codigo)}</b> aberta com ${lit(litros)} L` + (Number(data.saldo_anterior_l) ? ` + ${lit(data.saldo_anterior_l)} L de sobra da carga anterior.` : "."));
-  } catch (e) { msg("#dcMsg", "erro", "Não foi salva. " + erroTxt(e)); }
+  } catch (e) { msg("#dcMsg", "erro", semRede(e) ? "Sem internet: a carga precisa ser aberta com sinal (por exemplo, ainda no posto)." : "Não foi salva. " + erroTxt(e)); }
   $("#btCarga").disabled = false;
 });
 
@@ -1624,6 +1746,13 @@ $("#btMaquina").addEventListener("click", async () => {
 
 $("#aba-diesel").addEventListener("click", async e => {
   const d = e.target.dataset;
+  if (e.target.id === "btEnviarFila") { await enviarFila(); return mostrarFila(); }
+  if (d.filaDescartar || d.filaTentar) {
+    if (d.filaDescartar && !confirm("Descartar este abastecimento guardado? Ele não será enviado.")) return;
+    const fila = lerJson(FILA, []).filter(i => d.filaTentar || i.dados.id_local !== d.filaDescartar);
+    for (const i of fila) if (i.dados.id_local === d.filaTentar) delete i.erro;
+    salvarJson(FILA, fila); await enviarFila(); return carregarDiesel();
+  }
   if (d.dfoto) return abrirFotoDiesel(d.dfoto);
   if (d.dmaquina) {
     const { error } = await db.from("maquinas").update({ ativo: d.ativo !== "true" }).eq("id", d.dmaquina);
