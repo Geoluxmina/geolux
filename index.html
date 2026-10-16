@@ -130,9 +130,10 @@
     </div>
     <div class="grupo" data-grupo="diesel">
       <h4>Controle de Diesel</h4>
+      <button data-aba="diesel" data-parte="painel">Painel do diesel</button>
       <button data-aba="diesel" data-parte="abastecer">Abastecer máquina</button>
       <button data-aba="diesel" data-parte="cargas">Cargas de diesel</button>
-      <button data-aba="diesel" data-parte="consumo">Consumo e histórico</button>
+      <button data-aba="diesel" data-parte="consumo">Histórico de abastecimentos</button>
       <button data-aba="diesel" data-parte="maquinas">Máquinas</button>
     </div>
     <div class="grupo" data-grupo="sistema" data-admin>
@@ -327,8 +328,48 @@
 
     <!-- DIESEL (administrador e encarregado do diesel) -->
     <section id="aba-diesel" class="escondido">
-      <div id="dFila" data-parte="abastecer cargas consumo maquinas"></div>
-      <div id="dPend" data-parte="abastecer consumo"></div>
+      <div id="dFila" data-parte="painel abastecer cargas consumo maquinas"></div>
+      <div class="card linha" data-parte="painel">
+        <label>De <input type="date" id="dDe"></label>
+        <label>Até <input type="date" id="dAte"></label>
+        <label>Atalhos
+          <select id="dAtalho">
+            <option value="">—</option><option value="semana">Esta semana</option><option value="semant">Semana passada</option>
+            <option value="mes" selected>Este mês</option><option value="mesant">Mês passado</option>
+            <option value="ano">Este ano</option><option value="tudo">Desde o início</option>
+          </select>
+        </label>
+        <label>Máquina <select id="dpMaquina"><option value="">Todas</option></select></label>
+        <button class="bt sec" id="btRelDiesel">Relatório de consumo (PDF)</button>
+      </div>
+      <div data-parte="painel">
+        <p id="dpResumo" style="color:var(--suave);margin:0 0 10px"></p>
+        <div class="kpis" id="dpKpis"></div>
+        <div class="painel-grade">
+          <div class="card">
+            <h3 style="margin-top:0" id="dpTitGraf">Litros por dia</h3>
+            <div class="grafico" id="dpGraf"></div>
+          </div>
+          <div class="card">
+            <h3 style="margin-top:0">Aumento e redução de consumo</h3>
+            <div id="dpVariacao"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Consumo por máquina</h3>
+          <p style="margin-top:0;color:var(--suave);font-size:13px">Clique numa máquina para ver só ela. L/h é calculado entre dois abastecimentos com tanque cheio; a variação compara com o período anterior de mesma duração.</p>
+          <div class="tabela" id="dpMaquinas"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Consumo mês a mês (L/h)</h3>
+          <div class="tabela" id="dpMeses"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0" id="dpTitAbast">Abastecimentos do período</h3>
+          <div class="tabela" id="dpAbast"></div>
+        </div>
+      </div>
+      <div id="dPend" data-parte="painel abastecer"></div>
       <div class="card" data-parte="abastecer">
         <h3 style="margin-top:0">Abastecer máquina</h3>
         <div class="linha">
@@ -362,13 +403,6 @@
         </details>
         <div id="dcMsg"></div>
         <div class="tabela" id="tabCargas"></div>
-      </div>
-      <div class="card" data-parte="consumo">
-        <h3 style="margin-top:0">Consumo por máquina</h3>
-        <div class="linha"><label>De <input type="date" id="dDe"></label><label>Até <input type="date" id="dAte"></label></div>
-        <div id="dKpis" class="linha" style="margin:12px 0"></div>
-        <p style="color:var(--suave);font-size:13px;margin-top:0">L/h é calculado entre dois abastecimentos com tanque cheio: litros colocados ÷ horas trabalhadas entre eles. Custo usa o preço por litro da nota de cada carga.</p>
-        <div class="tabela" id="tabConsumo"></div>
       </div>
       <div class="card" data-parte="consumo abastecer">
         <h3 style="margin-top:0">Abastecimentos</h3>
@@ -1521,7 +1555,7 @@ setInterval(() => { if (usuario && papel !== "balanca") enviarFila(); }, 60000);
 async function carregarDiesel() {
   if (!$("#daQuando").value) $("#daQuando").value = agoraLocal();
   if (!$("#dcQuando").value) $("#dcQuando").value = agoraLocal();
-  if (!$("#dDe").value) { const h = new Date(); $("#dDe").value = iso(new Date(h.getFullYear(), h.getMonth(), 1)); $("#dAte").value = iso(h); }
+  if (!$("#dDe").value) aplicarAtalhoDiesel("mes");
   dzOffline = false;
   try {
     if (!navigator.onLine) throw new Error("Failed to fetch");
@@ -1558,7 +1592,7 @@ async function carregarDiesel() {
   $("#dfCarga").innerHTML = '<option value="">Todas</option>' + dz.cargas.filter(c => c.situacao !== "cancelada").slice().reverse().map(c => `<option value="${c.id}">${esc(c.codigo)}</option>`).join("");
   $("#dfCarga").value = fCarga;
   infoMaquina();
-  mostrarPendenciasDiesel(); mostrarCargas(); mostrarAbastecimentos(); mostrarMaquinas(); mostrarConsumo();
+  mostrarPendenciasDiesel(); mostrarCargas(); mostrarAbastecimentos(); mostrarMaquinas(); mostrarPainelDiesel();
 }
 
 function infoMaquina() {
@@ -1627,36 +1661,220 @@ function mostrarMaquinas() {
       `<td>${m.ativo ? "ativa" : "inativa"} <button class="mini" data-dmaquina="${m.id}" data-ativo="${m.ativo}">${m.ativo ? "Desativar" : "Ativar"}</button></td></tr>`).join("") + "</table>";
 }
 
-async function mostrarConsumo() {
+// ------------------------------------------------------------------ painel do diesel
+// números de um conjunto de abastecimentos: litros, custo, horas e L/h (só ciclos de tanque cheio)
+function resumoDiesel(as) {
+  const ciclos = as.filter(a => a.lh != null);
+  const hC = ciclos.reduce((s, a) => s + a.horasCiclo, 0), lC = ciclos.reduce((s, a) => s + a.litrosCiclo, 0);
+  return { n: as.length, litros: as.reduce((s, a) => s + Number(a.litros), 0), custo: as.reduce((s, a) => s + (a.custo || 0), 0),
+           horas: as.reduce((s, a) => s + (a.horas || 0), 0), lh: hC ? lC / hC : null };
+}
+const pct = (v, b) => b ? (v / b - 1) * 100 : null;
+const fmtPct = p => (p > 0 ? "+" : "") + p.toFixed(0) + "%";
+let painelDiesel = null;
+
+function aplicarAtalhoDiesel(a) {
+  const h = new Date(); let de = new Date(h), ate = new Date(h);
+  switch (a) {
+    case "semana": de.setDate(h.getDate() - ((h.getDay() + 6) % 7)); break;
+    case "semant": de.setDate(h.getDate() - ((h.getDay() + 6) % 7) - 7); ate = new Date(de); ate.setDate(de.getDate() + 6); break;
+    case "mes": de = new Date(h.getFullYear(), h.getMonth(), 1); break;
+    case "mesant": de = new Date(h.getFullYear(), h.getMonth() - 1, 1); ate = new Date(h.getFullYear(), h.getMonth(), 0); break;
+    case "ano": de = new Date(h.getFullYear(), 0, 1); break;
+    case "tudo": { const p = dz.abs.filter(x => x.situacao === "valida").map(x => dataBR(x.abastecido_em)).sort()[0]; de = p ? new Date(p + "T12:00:00") : h; break; }
+  }
+  $("#dDe").value = iso(de); $("#dAte").value = iso(ate);
+}
+
+async function mostrarPainelDiesel() {
   let de = $("#dDe").value, ate = $("#dAte").value || iso(new Date());
   if (de > ate) [de, ate] = [ate, de];
-  const noPeriodo = dz.abs.filter(a => a.situacao === "valida" && dataBR(a.abastecido_em) >= de && dataBR(a.abastecido_em) <= ate);
-  const linhas = dz.maquinas.map(m => {
-    const as = noPeriodo.filter(a => a.maquina_id === m.id);
-    const ciclos = as.filter(a => a.lh != null);
-    const hC = ciclos.reduce((s, a) => s + a.horasCiclo, 0), lC = ciclos.reduce((s, a) => s + a.litrosCiclo, 0);
-    const horas = as.reduce((s, a) => s + (a.horas || 0), 0), litros = as.reduce((s, a) => s + Number(a.litros), 0);
-    const custo = as.reduce((s, a) => s + (a.custo || 0), 0);
-    return { m, n: as.length, horas, litros, custo, lh: hC ? lC / hC : null };
-  }).filter(l => l.n);
-  const totL = linhas.reduce((s, l) => s + l.litros, 0), totC = linhas.reduce((s, l) => s + l.custo, 0);
-  const retirado = dz.cargas.filter(c => c.situacao !== "cancelada" && dataBR(c.retirado_em) >= de && dataBR(c.retirado_em) <= ate);
-  const kpis = [["Diesel abastecido", lit(totL) + " L"], ["Custo do diesel", real(totC)],
-                ["Retirado no posto", lit(retirado.reduce((s, c) => s + Number(c.litros), 0)) + " L"], ["Gasto nas notas", real(retirado.reduce((s, c) => s + Number(c.valor_total || 0), 0))]];
-  if (papel === "admin") {
+  const n = diasEntre(de, ate) + 1, ateAnt = somaDias(de, -1), deAnt = somaDias(de, -n);
+  const maqSel = $("#dpMaquina").value;
+  $("#dpMaquina").innerHTML = '<option value="">Todas</option>' + dz.maquinas.map(m => `<option value="${m.id}" ${String(m.id) === maqSel ? "selected" : ""}>${esc(m.nome)}</option>`).join("");
+  const validos = dz.abs.filter(a => a.situacao === "valida" && (!maqSel || String(a.maquina_id) === maqSel));
+  const entre = (a, x, y) => { const d = dataBR(a.abastecido_em); return d >= x && d <= y; };
+  const per = validos.filter(a => entre(a, de, ate)), ant = validos.filter(a => entre(a, deAnt, ateAnt));
+  const r = resumoDiesel(per), rA = resumoDiesel(ant);
+  const nomeMaq = maqSel ? dz.maquinas.find(m => String(m.id) === maqSel)?.nome : null;
+  $("#dpResumo").innerHTML = `<b>${nomeMaq ? esc(nomeMaq) : "Todas as máquinas"}</b> · de ${br(de)} a ${br(ate)} (${n} dias). Comparação com os ${n} dias anteriores: ${br(deAnt)} a ${br(ateAnt)}.`;
+  const delta = (v, b, fmt, menorMelhor) => !b ? "sem dado no período anterior" : Math.abs(pct(v, b)) < 0.5 ? `igual ao anterior (${fmt(b)})` : `${v >= b ? "▲" : "▼"} ${Math.abs(pct(v, b)).toFixed(0)}% vs. anterior (${fmt(b)})` + (menorMelhor && v < b ? " · melhorou" : "");
+  const kpis = [
+    ["Diesel abastecido", lit(r.litros) + " L", delta(r.litros, rA.litros, v => lit(v) + " L")],
+    ["Custo do diesel", real(r.custo), delta(r.custo, rA.custo, real)],
+    ["Horas trabalhadas", r.horas ? lit(r.horas) + " h" : "—", delta(r.horas, rA.horas, v => lit(v) + " h")],
+    ["Consumo médio", r.lh ? lit(r.lh) + " L/h" : "—", r.lh && rA.lh ? delta(r.lh, rA.lh, v => lit(v) + " L/h", true) : "precisa de 2 abastecimentos de tanque cheio"],
+    ["Custo por hora", r.horas ? real(r.custo / r.horas) : "—", r.horas && rA.horas ? delta(r.custo / r.horas, rA.custo / rA.horas, real, true) : ""],
+  ];
+  if (papel === "admin" && !maqSel && navigator.onLine) {
     try {
       const t = (await buscar(de, ate)).reduce((s, p) => s + p.liquido_kg, 0) / 1000;
-      kpis.push(["Diesel por tonelada expedida", t ? `${(totL / t).toFixed(2).replace(".", ",")} L/t · ${real(totC / t)}/t` : "—"]);
+      kpis.push(["Diesel por tonelada expedida", t ? `${(r.litros / t).toFixed(2).replace(".", ",")} L/t` : "—", t ? `${real(r.custo / t)} por tonelada · ${ton(t * 1000)} t expedidas` : "sem carradas no período"]);
     } catch {}
   }
-  $("#dKpis").innerHTML = kpis.map(([k, v]) => `<div class="kpi"><small>${k}</small><b>${v}</b></div>`).join("");
-  $("#tabConsumo").innerHTML = !linhas.length ? '<div class="vazio">Nenhum abastecimento no período.</div>' :
-    `<table><tr><th>Máquina</th><th class="n">Abastecimentos</th><th class="n">Trabalhou</th><th class="n">Litros</th><th class="n">Consumo médio</th><th class="n">Média geral</th><th class="n">Custo</th><th class="n">Custo por hora</th></tr>` +
-    linhas.sort((x, y) => y.litros - x.litros).map(l => { const u = unid(l.m); return `<tr><td><b>${esc(l.m.nome)}</b></td><td class="n">${l.n}</td><td class="n">${l.horas ? lit(l.horas) + " " + u : "—"}</td><td class="n">${lit(l.litros)}</td><td class="n">${l.lh ? lit(l.lh) + " L/" + u : "—"}</td><td class="n">${l.m.media ? lit(l.m.media) + " L/" + u : "—"}</td><td class="n">${real(l.custo)}</td><td class="n">${l.horas ? real(l.custo / l.horas) + "/" + u : "—"}</td></tr>`; }).join("") +
-    `<tr class="dia"><td>TOTAL</td><td class="n">${linhas.reduce((s, l) => s + l.n, 0)}</td><td></td><td class="n">${lit(totL)}</td><td></td><td></td><td class="n">${real(totC)}</td><td></td></tr></table>`;
+  $("#dpKpis").innerHTML = kpis.map(([t, v, d]) => `<div class="kpi"><small>${t}</small><b>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
+
+  // gráfico de litros: por dia até 62 dias, por semana até ~6 meses, depois por mês
+  const escala = n <= 62 ? "dia" : n <= 190 ? "semana" : "mês";
+  $("#dpTitGraf").textContent = `Litros por ${escala}`;
+  const chave = d => escala === "dia" ? d : escala === "semana" ? segundaDaSemana(d) : d.slice(0, 7);
+  const grupos = [];
+  for (let d = de; d <= ate; d = somaDias(d, 1)) { const k = chave(d); if (!grupos.length || grupos[grupos.length - 1].k !== k) grupos.push({ k, l: 0, c: 0, custo: 0 }); }
+  const idx = new Map(grupos.map((g, i) => [g.k, i]));
+  per.forEach(a => { const g = grupos[idx.get(chave(dataBR(a.abastecido_em)))]; if (g) { g.l += Number(a.litros); g.c++; g.custo += a.custo || 0; } });
+  const rot = g => escala === "dia" ? br(g.k).slice(0, 5) : escala === "semana" ? "sem. " + br(g.k).slice(0, 5) : g.k.slice(5) + "/" + g.k.slice(0, 4);
+  const W = 640, H = 220, ml = 44, mb = 22, mt = 8, larg = (W - ml - 8) / grupos.length, max = Math.max(...grupos.map(g => g.l), 1);
+  const passo = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].find(p => max / p <= 5) || 50000;
+  const topo = Math.ceil(max / passo) * passo, y = v => mt + (H - mt - mb) * (1 - v / topo), cadaRot = Math.ceil(grupos.length / 8);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Litros por ${escala}">`;
+  for (let v = 0; v <= topo; v += passo) svg += `<line x1="${ml}" x2="${W - 8}" y1="${y(v)}" y2="${y(v)}" stroke="#eceef2"/><text x="${ml - 6}" y="${y(v) + 4}" font-size="10" text-anchor="end" fill="#667085">${v.toLocaleString("pt-BR")}</text>`;
+  grupos.forEach((g, i) => {
+    const x = ml + i * larg + (larg > 4 ? 1 : 0), w = Math.max(larg - (larg > 4 ? 2 : 0), 1), rr = Math.min(3, w / 2);
+    if (g.l) svg += `<path d="M${x},${y(0)} V${y(g.l) + rr} q0,-${rr} ${rr},-${rr} H${x + w - rr} q${rr},0 ${rr},${rr} V${y(0)} Z" fill="#1F3A5F"/>`;
+    if (i % cadaRot === 0) svg += `<text x="${x + w / 2}" y="${H - 6}" font-size="10" text-anchor="middle" fill="#667085">${rot(g)}</text>`;
+    svg += `<rect class="alvo" x="${ml + i * larg}" y="${mt}" width="${larg}" height="${H - mt - mb}" data-i="${i}"/>`;
+  });
+  svg += `<line x1="${ml}" x2="${W - 8}" y1="${y(0)}" y2="${y(0)}" stroke="#98a2b3"/></svg><div class="dica"></div>`;
+  $("#dpGraf").innerHTML = per.length ? svg : '<div class="vazio">Nenhum abastecimento no período.</div>';
+  const dica = $("#dpGraf .dica");
+  $("#dpGraf").onmousemove = e => {
+    const i = e.target.dataset?.i; if (i === undefined) return dica && (dica.style.display = "none");
+    const g = grupos[i], caixa = $("#dpGraf").getBoundingClientRect();
+    dica.innerHTML = `<b>${escala === "semana" ? "Semana de " + br(g.k) : escala === "dia" ? br(g.k) : rot(g)}</b><br>${lit(g.l)} L · ${g.c} abastecimento(s) · ${real(g.custo)}`;
+    dica.style.display = "block"; dica.style.left = Math.min(e.clientX - caixa.left + 12, caixa.width - 200) + "px"; dica.style.top = (e.clientY - caixa.top - 40) + "px";
+  };
+  $("#dpGraf").onmouseleave = () => dica && (dica.style.display = "none");
+
+  // por máquina, com o período anterior
+  const todosPer = dz.abs.filter(a => a.situacao === "valida" && entre(a, de, ate)), todosAnt = dz.abs.filter(a => a.situacao === "valida" && entre(a, deAnt, ateAnt));
+  const linhas = dz.maquinas.map(m => ({ m, r: resumoDiesel(todosPer.filter(a => a.maquina_id === m.id)), a: resumoDiesel(todosAnt.filter(a => a.maquina_id === m.id)) }))
+    .filter(l => l.r.n || l.a.n).sort((x, y) => y.r.litros - x.r.litros);
+  const totL = linhas.reduce((s, l) => s + l.r.litros, 0) || 1, maior = Math.max(...linhas.map(l => l.r.litros), 1);
+  const corVar = (p, menorMelhor = true) => p == null ? "" : Math.abs(p) < 5 ? "color:var(--suave)" : (p < 0) === menorMelhor ? "color:var(--ok)" : "color:var(--erro)";
+  $("#dpMaquinas").innerHTML = !linhas.length ? '<div class="vazio">Nenhum abastecimento no período.</div>' :
+    `<table><tr><th>Máquina</th><th class="n">Litros</th><th style="width:16%"></th><th class="n">%</th><th class="n">Trabalhou</th><th class="n">Consumo</th><th class="n">Período anterior</th><th class="n">Variação do consumo</th><th class="n">Custo</th><th class="n">Custo por hora</th></tr>` +
+    linhas.map(({ m, r: x, a }) => {
+      const u = unid(m), p = x.lh && a.lh ? pct(x.lh, a.lh) : null, sel = String(m.id) === maqSel;
+      return `<tr data-dpmaq="${m.id}" style="cursor:pointer${sel ? ";outline:2px solid var(--azul)" : ""}"><td><b>${esc(m.nome)}</b></td><td class="n"><b>${lit(x.litros)}</b></td><td><div class="barra" style="width:${Math.max(x.litros / maior * 100, 1)}%"></div></td><td class="n">${(x.litros / totL * 100).toFixed(1).replace(".", ",")}%</td>` +
+        `<td class="n">${x.horas ? lit(x.horas) + " " + u : "—"}</td><td class="n">${x.lh ? lit(x.lh) + " L/" + u : "—"}</td><td class="n">${a.lh ? lit(a.lh) + " L/" + u : "—"}</td>` +
+        `<td class="n" style="${corVar(p)}">${p == null ? "—" : `${p < 0 ? "▼ redução" : "▲ aumento"} ${Math.abs(p).toFixed(0)}%`}</td><td class="n">${real(x.custo)}</td><td class="n">${x.horas ? real(x.custo / x.horas) : "—"}</td></tr>`;
+    }).join("") +
+    `<tr class="dia"><td>TOTAL</td><td class="n">${lit(r.litros)}</td><td></td><td class="n">100%</td><td class="n">${r.horas ? lit(r.horas) : ""}</td><td class="n">${r.lh ? lit(r.lh) + " L/h" : ""}</td><td class="n">${rA.lh ? lit(rA.lh) + " L/h" : ""}</td><td></td><td class="n">${real(r.custo)}</td><td></td></tr></table>`;
+
+  // aumento e redução: o que mudou de um período para o outro
+  const achados = [];
+  for (const { m, r: x, a } of linhas) {
+    const u = unid(m);
+    if (x.lh && a.lh) {
+      const p = pct(x.lh, a.lh);
+      if (p <= -5) achados.push(["ok", `<b>${esc(m.nome)}</b>: consumo caiu ${Math.abs(p).toFixed(0)}% (de ${lit(a.lh)} para ${lit(x.lh)} L/${u}).`]);
+      else if (p >= 5) achados.push([p >= 20 ? "erro" : "aviso", `<b>${esc(m.nome)}</b>: consumo subiu ${p.toFixed(0)}% (de ${lit(a.lh)} para ${lit(x.lh)} L/${u}). ${p >= 20 ? "Vale verificar a máquina (filtro, bico, vazamento) e o lançamento do horímetro." : ""}`]);
+      else achados.push(["", `<b>${esc(m.nome)}</b>: consumo estável (${lit(x.lh)} L/${u}, ${fmtPct(p)}).`]);
+    } else if (x.n && !a.n) achados.push(["", `<b>${esc(m.nome)}</b>: sem abastecimento no período anterior para comparar.`]);
+    else if (!x.n && a.n) achados.push(["", `<b>${esc(m.nome)}</b>: nenhum abastecimento neste período (no anterior foram ${lit(a.litros)} L).`]);
+    else if (!x.lh) achados.push(["", `<b>${esc(m.nome)}</b>: ${lit(x.litros)} L, mas ainda sem dois abastecimentos de tanque cheio para calcular o L/h.`]);
+  }
+  $("#dpVariacao").innerHTML = achados.length ? achados.map(([t, h]) => `<div class="msg ${t}" style="${t ? "" : "background:var(--cinza)"}">${h}</div>`).join("") : '<div class="vazio">—</div>';
+  painelDiesel = { de, ate, deAnt, ateAnt, n, r, rA, linhas, achados, per, maqSel, nomeMaq };
+
+  // L/h mês a mês (últimos 6 meses até o fim do período)
+  const meses = []; { const f = new Date(ate + "T12:00:00"); for (let i = 5; i >= 0; i--) { const d = new Date(f.getFullYear(), f.getMonth() - i, 1); meses.push(iso(d).slice(0, 7)); } }
+  const maqsMes = dz.maquinas.filter(m => !maqSel || String(m.id) === maqSel);
+  const lhMes = (m, mes) => resumoDiesel(dz.abs.filter(a => a.situacao === "valida" && a.maquina_id === m.id && dataBR(a.abastecido_em).slice(0, 7) === mes)).lh;
+  const linhasMes = maqsMes.map(m => ({ m, v: meses.map(mes => lhMes(m, mes)) })).filter(l => l.v.some(v => v != null));
+  painelDiesel.meses = meses; painelDiesel.linhasMes = linhasMes;
+  const nomeMes = mes => ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][Number(mes.slice(5)) - 1] + "/" + mes.slice(2, 4);
+  $("#dpMeses").innerHTML = !linhasMes.length ? '<div class="vazio">Ainda sem consumo calculado (precisa de dois abastecimentos de tanque cheio).</div>' :
+    `<table><tr><th>Máquina</th>${meses.map(mes => `<th class="n">${nomeMes(mes)}</th>`).join("")}<th class="n">Tendência</th></tr>` +
+    linhasMes.map(({ m, v }) => {
+      const comDado = v.filter(x => x != null), p = comDado.length >= 2 ? pct(comDado[comDado.length - 1], comDado[comDado.length - 2]) : null;
+      return `<tr><td><b>${esc(m.nome)}</b></td>${v.map(x => `<td class="n">${x != null ? lit(x) : "—"}</td>`).join("")}<td class="n" style="${corVar(p)}">${p == null ? "—" : `${p < 0 ? "▼ caiu" : "▲ subiu"} ${Math.abs(p).toFixed(0)}%`}</td></tr>`;
+    }).join("") + "</table>";
+
+  // o que foi abastecido em cada máquina
+  const maq = new Map(dz.maquinas.map(m => [m.id, m])), cod = new Map(dz.cargas.map(c => [c.id, c.codigo]));
+  $("#dpTitAbast").textContent = nomeMaq ? `Abastecimentos de ${nomeMaq} no período` : "Abastecimentos do período";
+  const lista = per.slice().sort((x, y) => x.abastecido_em < y.abastecido_em ? 1 : -1);
+  $("#dpAbast").innerHTML = !lista.length ? '<div class="vazio">Nenhum abastecimento no período.</div>' :
+    `<table><tr><th>Data</th><th>Máquina</th><th>Carga</th><th class="n">Horímetro</th><th class="n">Trabalhou</th><th class="n">Litros</th><th>Tanque</th><th class="n">Consumo</th><th class="n">Custo</th><th>Operador</th></tr>` +
+    lista.map(a => { const m = maq.get(a.maquina_id), u = unid(m);
+      return `<tr><td>${dataHora(a.abastecido_em)}</td><td>${esc(m?.nome)}</td><td>${esc(cod.get(a.carga_id))}</td><td class="n">${lit(a.horimetro)} ${u}</td><td class="n">${a.horas != null ? lit(a.horas) + " " + u : "—"}</td><td class="n"><b>${lit(a.litros)}</b></td><td>${a.tanque_cheio ? "cheio" : "parcial"}</td><td class="n">${a.lh != null ? lit(a.lh) + " L/" + u : "—"}</td><td class="n">${real(a.custo)}</td><td>${esc(a.operador || "—")}</td></tr>`; }).join("") +
+    `<tr class="dia"><td>TOTAL</td><td></td><td></td><td></td><td class="n">${r.horas ? lit(r.horas) : ""}</td><td class="n">${lit(r.litros)}</td><td></td><td></td><td class="n">${real(r.custo)}</td><td></td></tr></table>`;
 }
-$("#dDe").addEventListener("change", mostrarConsumo);
-$("#dAte").addEventListener("change", mostrarConsumo);
+$("#dDe").addEventListener("change", () => { $("#dAtalho").value = ""; mostrarPainelDiesel(); });
+$("#dAte").addEventListener("change", () => { $("#dAtalho").value = ""; mostrarPainelDiesel(); });
+$("#dAtalho").addEventListener("change", e => { if (e.target.value) { aplicarAtalhoDiesel(e.target.value); mostrarPainelDiesel(); } });
+$("#dpMaquina").addEventListener("change", mostrarPainelDiesel);
+$("#dpMaquinas").addEventListener("click", e => {
+  const tr = e.target.closest("[data-dpmaq]"); if (!tr) return;
+  $("#dpMaquina").value = $("#dpMaquina").value === tr.dataset.dpmaq ? "" : tr.dataset.dpmaq; mostrarPainelDiesel();
+});
+
+// relatório de consumo em PDF, do período e máquina exibidos no painel
+$("#btRelDiesel").addEventListener("click", () => {
+  const P = painelDiesel; if (!P) return;
+  const doc = new jspdf.jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const azul = [31, 58, 95], W = 297, M = 10, num = `DSL-${P.de.replace(/-/g, "")}-${P.ate.replace(/-/g, "")}`;
+  doc.addImage(LOGO, "PNG", M, 7, 46, 13.2);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...azul); doc.text(EMPRESA, M + 50, 13);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(110); doc.text(ENDERECO, M + 50, 18.5);
+  doc.setFontSize(7); doc.text("DOCUMENTO", W - M, 12, { align: "right" });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text(num, W - M, 17, { align: "right" });
+  doc.setDrawColor(...azul); doc.setLineWidth(0.6); doc.line(M, 22, W - M, 22);
+  doc.setFontSize(13); doc.text("Relatório de consumo de diesel" + (P.nomeMaq ? ` · ${P.nomeMaq}` : ""), M, 30);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(80);
+  doc.text(`Período: ${br(P.de)} a ${br(P.ate)} (${P.n} dias). Comparação com ${br(P.deAnt)} a ${br(P.ateAnt)}.`, M, 35);
+  const caixas = [["DIESEL ABASTECIDO", lit(P.r.litros) + " L"], ["CUSTO", real(P.r.custo)], ["HORAS TRABALHADAS", P.r.horas ? lit(P.r.horas) + " h" : "—"],
+                  ["CONSUMO MÉDIO", P.r.lh ? lit(P.r.lh) + " L/h" : "—"], ["PERÍODO ANTERIOR", P.rA.lh ? lit(P.rA.lh) + " L/h" : "—"], ["CUSTO POR HORA", P.r.horas ? real(P.r.custo / P.r.horas) : "—"]];
+  const larg = (W - 2 * M) / caixas.length;
+  caixas.forEach(([t, v], i) => { const x = M + i * larg;
+    doc.setDrawColor(170); doc.setLineWidth(0.2); doc.rect(x, 39, larg, 15);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(110); doc.text(t, x + 2.5, 43.5);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...azul); doc.text(v, x + 2.5, 50.5); });
+  const rodape = () => { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(130);
+    doc.text(`${num} · emitido em ${new Date().toLocaleString("pt-BR")}`, M, 205);
+    doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 205, { align: "right" }); };
+  const estilo = { margin: { left: M, right: M, bottom: 14 }, styles: { fontSize: 7.5, cellPadding: 1.6 }, headStyles: { fillColor: azul, textColor: 255 },
+    footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" }, alternateRowStyles: { fillColor: [244, 245, 247] }, didDrawPage: rodape };
+  doc.autoTable({ ...estilo, startY: 58,
+    head: [["Máquina", "Litros", "%", "Trabalhou", "Consumo", "Período anterior", "Variação", "Custo", "Custo por hora"]],
+    body: P.linhas.map(({ m, r: x, a }) => { const u = unid(m), p = x.lh && a.lh ? pct(x.lh, a.lh) : null;
+      return [m.nome, lit(x.litros), (x.litros / (P.r.litros || 1) * 100).toFixed(1).replace(".", ",") + "%", x.horas ? lit(x.horas) + " " + u : "—", x.lh ? lit(x.lh) + " L/" + u : "—", a.lh ? lit(a.lh) + " L/" + u : "—",
+              p == null ? "—" : (p < 0 ? "redução " : "aumento ") + Math.abs(p).toFixed(0) + "%", real(x.custo), x.horas ? real(x.custo / x.horas) : "—"]; }),
+    foot: [["TOTAL", lit(P.r.litros), "100%", P.r.horas ? lit(P.r.horas) + " h" : "", P.r.lh ? lit(P.r.lh) + " L/h" : "", P.rA.lh ? lit(P.rA.lh) + " L/h" : "", "", real(P.r.custo), ""]],
+    columnStyles: { 1: { halign: "right", fontStyle: "bold" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" }, 8: { halign: "right" } },
+    didParseCell: d => { if (d.section === "body" && d.column.index === 6) { const t = String(d.cell.raw);
+      const p = Number((t.match(/\d+/) || [0])[0]); if (p >= 5) d.cell.styles.textColor = t.startsWith("redução") ? [30, 123, 69] : [180, 35, 24]; } } });
+  let y = doc.lastAutoTable.finalY + 7;
+  if (y > 175) { doc.addPage(); y = 18; }
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text("Aumento e redução de consumo", M, y); y += 5;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+  for (const [, h] of P.achados) {
+    const t = doc.splitTextToSize("• " + h.replace(/<[^>]+>/g, ""), W - 2 * M);
+    if (y + t.length * 4 > 200) { doc.addPage(); y = 18; }
+    doc.text(t, M, y); y += t.length * 4 + 1;
+  }
+  if (!P.achados.length) { doc.text("Sem abastecimentos para comparar.", M, y); y += 5; }
+  if (P.linhasMes.length) {
+    const nomeMes = mes => ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][Number(mes.slice(5)) - 1] + "/" + mes.slice(2, 4);
+    if (y > 170) { doc.addPage(); y = 18; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("Consumo mês a mês (L/h)", M, y + 4);
+    doc.autoTable({ ...estilo, startY: y + 7, head: [["Máquina", ...P.meses.map(nomeMes)]],
+      body: P.linhasMes.map(({ m, v }) => [m.nome, ...v.map(x => x != null ? lit(x) : "—")]),
+      columnStyles: Object.fromEntries(P.meses.map((_, i) => [i + 1, { halign: "right" }])) });
+    y = doc.lastAutoTable.finalY + 7;
+  }
+  if (P.per.length) {
+    const maq = new Map(dz.maquinas.map(m => [m.id, m])), cod = new Map(dz.cargas.map(c => [c.id, c.codigo]));
+    doc.addPage(); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text("Abastecimentos do período", M, 16);
+    doc.autoTable({ ...estilo, startY: 20, head: [["Data", "Máquina", "Carga", "Horímetro", "Trabalhou", "Litros", "Tanque", "Consumo", "Custo", "Operador"]],
+      body: P.per.slice().sort((x, y) => x.abastecido_em < y.abastecido_em ? -1 : 1).map(a => { const m = maq.get(a.maquina_id), u = unid(m);
+        return [dataHora(a.abastecido_em), m?.nome || "", cod.get(a.carga_id) || "", lit(a.horimetro) + " " + u, a.horas != null ? lit(a.horas) + " " + u : "—", lit(a.litros), a.tanque_cheio ? "cheio" : "parcial", a.lh != null ? lit(a.lh) + " L/" + u : "—", real(a.custo), a.operador || "—"]; }),
+      foot: [["TOTAL", "", "", "", P.r.horas ? lit(P.r.horas) + " h" : "", lit(P.r.litros), "", "", real(P.r.custo), ""]],
+      columnStyles: { 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right", fontStyle: "bold" }, 7: { halign: "right" }, 8: { halign: "right" } } });
+  }
+  doc.save(`Geolux_consumo_diesel_${P.de}_a_${P.ate}${P.nomeMaq ? "_" + P.nomeMaq.replace(/[^\w]+/g, "") : ""}.pdf`);
+});
 $("#dfMaquina").addEventListener("change", mostrarAbastecimentos);
 $("#dfCarga").addEventListener("change", mostrarAbastecimentos);
 
