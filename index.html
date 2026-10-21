@@ -950,7 +950,12 @@ async function buscar(de, ate, { canceladas = false } = {}) {
     if (data.length < 1000) break;
   }
   const conf = papel === "admin" ? await carregarConferidas() : null;
+  // mesmo cliente escrito diferente ("2R Mineração", "2R MINERAÇÃO", espaço a mais) vira um nome só
+  const canon = new Map();
+  for (const p of todas) { const k = normNome(p.cliente), atual = canon.get(k);
+    if (!atual || (atual === atual.toUpperCase() && p.cliente !== p.cliente.toUpperCase())) canon.set(k, String(p.cliente).trim()); }
   return todas.filter(p => !(p.motivo_cancelamento || "").startsWith("Anexo cancelado: ")).map(p => {
+    p.cliente = canon.get(normNome(p.cliente));
     if (conf?.has(Number(p.ticket))) p.conferida = conf.get(Number(p.ticket));
     if (ehPorCarrada(p)) { p.por_carrada = true; p.liquido_balanca_kg = p.liquido_kg; p.liquido_kg = 0; if (!p.produto) { p.produto = "Barro"; p.produto_auto = true; } }
     return p;
@@ -962,7 +967,8 @@ async function carregarFiltros() {
     db.from("clientes").select("nome,nome_balanca").order("nome"),
     db.from("produtos").select("nome").order("nome")]);
   const manter = (sel, itens) => { const v = $(sel).value; $(sel).innerHTML = '<option value="">Todos</option>' + itens.map(i => `<option>${esc(i)}</option>`).join(""); $(sel).value = v; };
-  manter("#fCliente", [...new Set((cl || []).map(c => c.nome))]);
+  const vistos = new Set();
+  manter("#fCliente", (cl || []).map(c => c.nome).filter(n => { const k = normNome(n); return !vistos.has(k) && vistos.add(k); }));
   manter("#fProduto", (pr || []).map(p => p.nome));
 }
 
@@ -982,7 +988,7 @@ let atual = [];
 async function filtrar() {
   const ps = await buscar($("#fDe").value, $("#fAte").value, { canceladas: $("#fVisao").value === "detalhado" });
   const c = $("#fCliente").value, p = $("#fProduto").value;
-  return ps.filter(x => (!c || x.cliente === c) && (!p || x.produto === p));
+  return ps.filter(x => (!c || normNome(x.cliente) === normNome(c)) && (!p || x.produto === p));
 }
 
 function agrupar(ps, chave) {
@@ -1220,7 +1226,7 @@ function paginaComprovante(doc, ps, cad, periodo) {
 let envio = [];
 const SITUACAO = { enviado: "enviado", de_acordo: "de acordo", contestado: "contestou" };
 // cadastro do cliente pelo nome completo; com dois nomes de balança, prefere o que tem CPF/CNPJ
-const cadPorNome = (cls, nome) => { const cs = (cls || []).filter(x => x.nome === nome); return cs.find(x => x.cpf_cnpj) || cs[0]; };
+const cadPorNome = (cls, nome) => { const cs = (cls || []).filter(x => normNome(x.nome) === normNome(nome)); return cs.find(x => x.cpf_cnpj) || cs[0]; };
 function foneWhats(t) {
   let n = String(t || "").replace(/\D/g, "").replace(/^0+/, "");
   if (n.length === 10 || n.length === 11) n = "55" + n;
