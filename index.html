@@ -260,7 +260,7 @@
         <label>Até <input type="date" id="cAte"></label>
         <button class="bt" id="btConferir">Mostrar</button>
       </div>
-      <p style="color:var(--suave);font-size:13px">Pesagens que podem gerar discussão com o cliente. Não são erros por si só, mas vale saber explicar cada uma.</p>
+      <p style="color:var(--suave);font-size:13px">Pesagens que podem gerar discussão com o cliente. Não são erros por si só, mas vale saber explicar cada uma. Depois de conferir, clique em <b>Conferida</b> e ela sai da lista.</p>
       <div class="tabela" id="confTabela"></div>
     </section>
 
@@ -554,9 +554,9 @@ function sha256js(m) {
   return H.map(v => (v >>> 0).toString(16).padStart(8, "0")).join("");
 }
 
-// os avisos "a conferir" aparecem só para o administrador
+// os avisos "a conferir" aparecem só para o administrador; carrada já conferida não tem aviso
 function alertas(p) {
-  if (papel !== "admin") return "";
+  if (papel !== "admin" || p.conferida) return "";
   const a = [];
   if (!p.motorista) a.push("motorista não informado");
   const min = (new Date(p.saida_em) - new Date(p.entrada_em)) / 60000;
@@ -928,6 +928,17 @@ $("#tabAnexos").addEventListener("click", async e => {
 });
 
 // ------------------------------------------------------------------ consulta
+// carradas já conferidas pelo administrador (query 014); sem a 014, nenhuma
+async function carregarConferidas() {
+  const m = new Map();
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await db.from("pesagens_conferidas").select("ticket,observacao").range(i, i + 999);
+    if (error) return null;
+    data.forEach(x => m.set(Number(x.ticket), x.observacao));
+    if (data.length < 1000) break;
+  }
+  return m;
+}
 async function buscar(de, ate, { canceladas = false } = {}) {
   const todas = [];
   for (let i = 0; ; i += 1000) {
@@ -938,7 +949,9 @@ async function buscar(de, ate, { canceladas = false } = {}) {
     todas.push(...data);
     if (data.length < 1000) break;
   }
+  const conf = papel === "admin" ? await carregarConferidas() : null;
   return todas.filter(p => !(p.motivo_cancelamento || "").startsWith("Anexo cancelado: ")).map(p => {
+    if (conf?.has(Number(p.ticket))) p.conferida = conf.get(Number(p.ticket));
     if (ehPorCarrada(p)) { p.por_carrada = true; p.liquido_balanca_kg = p.liquido_kg; p.liquido_kg = 0; if (!p.produto) { p.produto = "Barro"; p.produto_auto = true; } }
     return p;
   });
@@ -1043,14 +1056,24 @@ $("#fVisao").addEventListener("change", mostrarRelatorio);
 async function mostrarConferir() {
   $("#confTabela").innerHTML = '<div class="vazio">Carregando…</div>';
   try {
-    const ps = (await buscar($("#cDe").value, $("#cAte").value)).filter(alertas);
-    $("#confTabela").innerHTML = ps.length
-      ? `<table><tr><th>Data</th><th>Tiquete</th><th>Cliente</th><th>Placa</th><th>Motorista</th><th>Entrada</th><th>Saída</th><th class="n">Líquido (kg)</th><th>O que conferir</th></tr>` +
-        ps.map(p => `<tr><td>${br(p.data)}</td><td>${p.ticket}</td><td>${esc(p.cliente)}</td><td>${esc(p.placa)}</td><td>${esc(p.motorista || "—")}</td><td>${brHora(p.entrada_em)}</td><td>${brHora(p.saida_em)}</td><td class="n">${liqTxt(p)}</td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") + "</table>"
-      : '<div class="vazio">Nada a conferir nesse período.</div>';
+    const todas = await buscar($("#cDe").value, $("#cAte").value);
+    const ps = todas.filter(alertas), nConf = todas.filter(p => p.conferida).length;
+    $("#confTabela").innerHTML = (ps.length
+      ? `<table><tr><th>Data</th><th>Tiquete</th><th>Cliente</th><th>Placa</th><th>Motorista</th><th>Entrada</th><th>Saída</th><th class="n">Líquido (kg)</th><th>O que conferir</th><th></th></tr>` +
+        ps.map(p => `<tr><td>${br(p.data)}</td><td>${p.ticket}</td><td>${esc(p.cliente)}</td><td>${esc(p.placa)}</td><td>${esc(p.motorista || "—")}</td><td>${brHora(p.entrada_em)}</td><td>${brHora(p.saida_em)}</td><td class="n">${liqTxt(p)}</td><td class="alerta">${esc(alertas(p))}</td><td><button class="mini" data-conf-ok="${p.ticket}">Conferida</button></td></tr>`).join("") + "</table>"
+      : '<div class="vazio">Nada a conferir nesse período.</div>') +
+      (nConf ? `<p style="color:var(--suave);font-size:13px">${nConf} carrada(s) do período já conferida(s) não aparecem aqui.</p>` : "");
   } catch (e) { $("#confTabela").innerHTML = `<div class="msg erro">${erroTxt(e)}</div>`; }
 }
 $("#btConferir").addEventListener("click", mostrarConferir);
+$("#confTabela").addEventListener("click", async e => {
+  const t = e.target.dataset.confOk; if (!t) return;
+  const obs = prompt(`Tiquete ${t}: o que foi conferido? (ex.: conferido com o PDF da balança, motorista avisado)`, "Conferida conforme o PDF da balança");
+  if (obs === null) return;
+  const { error } = await db.from("pesagens_conferidas").insert({ ticket: Number(t), observacao: obs.trim() || "Conferida", conferido_por: usuario.id });
+  if (error) return alert(/does not exist|schema cache/i.test(error.message) ? "Rode a query 014 no Supabase." : error.message);
+  mostrarConferir();
+});
 
 // ------------------------------------------------------------------ Excel
 $("#btExcel").addEventListener("click", async () => {
@@ -1466,7 +1489,7 @@ async function carregarPainel() {
   const paraVer = ativos.filter(i => um(i.conferencias) && !um(um(i.conferencias).conferencias_vistas)).length;
   if (paraVer && papel === "admin") al.push(`<b>${paraVer} conferência(s) da balança</b> aguardando você na aba Anexar relatório.`);
   if (semConf && papel !== "diesel") al.push(`${semConf} relatório(s) anexado(s) que a balança ainda não conferiu.`);
-  const semMot = ps.filter(x => !x.motorista).length;
+  const semMot = ps.filter(x => !x.motorista && !x.conferida).length;
   if (semMot) al.push(`${semMot} carrada(s) do período sem motorista (${Math.round(semMot / ps.length * 100)}%).`);
   const conferir = ps.filter(alertas).length;
   if (conferir) al.push(`${conferir} carrada(s) com algo a conferir (aba A conferir).`);
