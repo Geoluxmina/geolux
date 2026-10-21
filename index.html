@@ -190,6 +190,7 @@
 
     <!-- ANEXAR -->
     <section id="aba-anexar">
+      <div id="avisoCnpj"></div>
       <div class="card">
         <div class="linha">
           <label>Relatório da balança (PDF)
@@ -854,7 +855,17 @@ $("#btGravar").addEventListener("click", async () => {
 // ------------------------------------------------------------------ anexos já gravados
 const hojeBR = () => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
 const um = x => Array.isArray(x) ? x[0] : x;
+// aviso para a balança (e o administrador): clientes sem CPF/CNPJ no cadastro
+async function avisoCnpj() {
+  const { data } = await db.from("clientes").select("*").order("nome");
+  const falta = [...new Set((data || []).filter(c => !c.unir_em && !(c.cpf_cnpj || "").trim() && !/^n[aã]o informado$/i.test(c.nome_balanca)).map(c => c.nome))];
+  $("#avisoCnpj").innerHTML = !falta.length ? "" :
+    `<div class="msg aviso"><b>${falta.length} cliente(s) sem CNPJ no cadastro:</b> ${falta.slice(0, 15).map(esc).join(", ")}${falta.length > 15 ? "…" : ""}.
+      Abra <b>Cadastros &gt; Clientes</b>, preencha o CPF/CNPJ de cada empresa e clique em <b>Salvar</b>. <button class="mini" id="btIrCnpj">Abrir Cadastros</button></div>`;
+  $("#btIrCnpj")?.addEventListener("click", () => document.querySelector('#abas [data-aba=cadastros]')?.click());
+}
 async function carregarAnexos() {
+  avisoCnpj();
   $("#anexosAjuda").textContent = papel === "admin"
     ? "Quando a balança conferir e enviar um relatório, ele aparece aqui como enviado; marque como visto depois de olhar. Relatório errado: Cancelar anexo, com o motivo. O anexo e as carradas saem das telas (ficam só no backup) e o arquivo pode ser anexado de novo."
     : "Depois de gravar, confira o resumo do dia e envie ao administrador. Relatório errado: Cancelar anexo, com o motivo, e anexe o certo.";
@@ -1312,7 +1323,7 @@ async function carregarCadastros() {
   $("#tabProdutos").innerHTML = `<table><tr><th>Produto</th><th>Situação</th></tr>` +
     (pr || []).map(p => `<tr><td>${esc(p.nome)}</td><td>${p.ativo ? "ativo" : "inativo"} <button class="mini" data-produto="${p.id}" data-ativo="${p.ativo}">${p.ativo ? "Desativar" : "Ativar"}</button></td></tr>`).join("") + "</table>";
   // nome da balança juntado a outro cliente (query 015) não aparece: as carradas dele já contam no principal
-  const juntar = (cl || []).some(c => "unir_em" in c), principais = (cl || []).filter(c => !c.unir_em);
+  const juntar = papel === "admin" && (cl || []).some(c => "unir_em" in c), principais = (cl || []).filter(c => !c.unir_em);
   const opJuntar = c => `<select data-juntar="${c.id}"><option value="">—</option>${principais.filter(x => x.id !== c.id).map(x => `<option value="${x.id}">${esc(x.nome)} (${esc(x.nome_balanca)})</option>`).join("")}</select>`;
   $("#tabClientes").innerHTML = `<table><tr><th>Nome na balança</th><th>Nome completo</th><th>CPF/CNPJ</th><th>Telefone</th>${juntar ? "<th>Juntar com</th>" : ""}<th></th></tr>` +
     principais.map(c => `<tr data-cliente="${c.id}"><td>${esc(c.nome_balanca)}</td><td><input value="${esc(c.nome)}" data-campo="nome"></td><td><input value="${esc(c.cpf_cnpj)}" data-campo="cpf_cnpj"></td><td><input value="${esc(c.telefone)}" data-campo="telefone"></td>${juntar ? `<td>${opJuntar(c)}</td>` : ""}<td><button class="mini" data-salvar="${c.id}">Salvar</button></td></tr>`).join("") + "</table>" +
