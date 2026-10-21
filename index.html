@@ -137,6 +137,10 @@
       <button data-aba="diesel" data-parte="maquinas">Máquinas</button>
       <button data-aba="diesel" data-parte="fornecedores">Fornecedores</button>
     </div>
+    <div class="grupo" data-grupo="manutencao">
+      <h4>Manutenção</h4>
+      <button data-aba="manutencao">Manutenção</button>
+    </div>
     <div class="grupo" data-grupo="sistema" data-admin>
       <h4>Sistema</h4>
       <button data-aba="fechamento">Backup</button>
@@ -477,6 +481,71 @@
         <div class="tabela" id="tabFornecedores"></div>
       </div>
     </section>
+    <!-- MANUTENÇÃO -->
+    <section id="aba-manutencao" class="escondido">
+      <div class="card linha">
+        <label>Máquina <select id="mMaq"></select></label>
+        <label>De <input type="date" id="mDe"></label>
+        <label>Até <input type="date" id="mAte"></label>
+        <button class="bt" id="btManut">Atualizar</button>
+      </div>
+      <div id="mMsg"></div>
+      <div class="kpis" id="mKpis"></div>
+      <div class="painel-grade">
+        <div class="card">
+          <h3 style="margin-top:0">Plano de manutenção</h3>
+          <p style="margin-top:0;color:var(--suave);font-size:13px">O horímetro vem sozinho dos abastecimentos. Quando fizer um serviço, clique em <b>Feito</b> e salve: a próxima é recalculada. "A confirmar" = intervalo ainda não conferido no manual do fabricante.</p>
+          <div class="tabela" id="mPlano"></div>
+          <div class="linha" data-admin style="margin-top:10px">
+            <label>Novo serviço no plano <input id="mpServico" placeholder="ex.: troca da correia"></label>
+            <label>A cada (horas) <input id="mpIntervalo" inputmode="decimal" style="max-width:110px"></label>
+            <button class="bt sec" id="btPlanoAdd">Incluir no plano</button>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h3 style="margin-top:0">Ficha da máquina</h3>
+            <div class="linha" style="flex-direction:column;align-items:stretch">
+              <label>Marca / modelo <input id="mfModelo" placeholder="ex.: Atlas Copco XAS 186"></label>
+              <label>Nº de série <input id="mfSerie"></label>
+              <label>Ano <input id="mfAno" inputmode="numeric"></label>
+              <label>Uso <input id="mfUso" placeholder="ex.: perfuração"></label>
+              <label>Manual do fabricante (PDF ou foto) <input type="file" id="mfManual" accept="application/pdf,image/*"></label>
+              <div id="mfManualVer"></div>
+              <button class="bt sec" id="btFicha" data-admin>Salvar ficha</button>
+            </div>
+            <div class="linha" data-admin style="margin-top:10px">
+              <label>Outra máquina própria <select id="mfOutra"></select></label>
+              <button class="mini" id="btPropria">Incluir na manutenção</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3 style="margin-top:0">Atenção</h3>
+            <ul class="lista-alertas" id="mAlertas"></ul>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="mForm">
+        <h3 style="margin-top:0">Lançar serviço</h3>
+        <div class="linha">
+          <label>Data <input type="date" id="msData"></label>
+          <label>Horímetro <input id="msHorimetro" inputmode="decimal" style="max-width:110px"></label>
+          <label>Tipo <select id="msTipo"><option value="preventiva">Preventiva (do plano)</option><option value="corretiva">Conserto (quebra)</option></select></label>
+          <label>Serviço do plano <select id="msPlano"></select></label>
+          <label>O que foi feito <input id="msDesc" style="min-width:240px"></label>
+          <label>Peças usadas <input id="msPecas" style="min-width:200px"></label>
+          <label>Valor (R$) <input id="msValor" inputmode="decimal" style="max-width:120px"></label>
+          <label>Quem fez <input id="msQuem"></label>
+          <label>Nota ou foto (opcional) <input type="file" id="msNota" accept="image/*,application/pdf"></label>
+          <button class="bt" id="btServico">Salvar serviço</button>
+        </div>
+        <div id="msMsg"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Histórico de serviços</h3>
+        <div class="tabela" id="mHist"></div>
+      </div>
+    </section>
     <section id="aba-fechamento" class="escondido">
       <div class="card">
         <h3 style="margin-top:0">Backup</h3>
@@ -676,6 +745,7 @@ async function iniciar() {
   document.querySelectorAll("[data-admin]").forEach(b => b.classList.toggle("escondido", papel !== "admin"));
   // balança: só pesagem; encarregado do diesel: só diesel; administrador: tudo
   document.querySelector('#abas [data-grupo="diesel"]').classList.toggle("escondido", papel === "balanca");
+  document.querySelector('#abas [data-grupo="manutencao"]').classList.toggle("escondido", papel === "balanca");
   // encarregado do diesel: do controle de pesagem, só o Painel, para consulta
   if (papel === "diesel") document.querySelectorAll('#abas [data-grupo="pesagem"] button').forEach(b => b.classList.toggle("escondido", b.dataset.aba !== "painel"));
   $("#login").classList.add("escondido"); $("#app").classList.remove("escondido");
@@ -720,6 +790,7 @@ document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click
   if (b.dataset.aba === "painel") carregarPainel();
   if (b.dataset.aba === "envio") carregarEnvio();
   if (b.dataset.aba === "diesel") carregarDiesel();
+  if (b.dataset.aba === "manutencao") carregarManut();
 }));
 
 // ------------------------------------------------------------------ anexar relatório
@@ -1615,7 +1686,7 @@ $("#pClientes").addEventListener("click", e => {
 $("#btBackup").addEventListener("click", async () => {
   msg("#backupMsg", "aviso", "Gerando backup…");
   try {
-    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "auditoria"];
+    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "auditoria"];
     const dados = {};
     for (const t of tabelas) {
       dados[t] = [];
@@ -2476,6 +2547,187 @@ $("#aba-diesel").addEventListener("click", async e => {
     if (error) return msg(tipo === "carga" ? "#dcMsg" : "#daMsg", "erro", erroTxt(error));
     carregarDiesel();
   }
+});
+
+// ------------------------------------------------------------------ manutenção das máquinas próprias (query 016)
+let mz = null;
+const horasTxt = n => n == null ? "—" : lit(n) + " h";
+async function carregarManut() {
+  if (!$("#mAte").value) { const h = new Date(); $("#mAte").value = iso(h); $("#mDe").value = iso(new Date(h.getFullYear(), h.getMonth() - 2, 1)); }
+  if (!$("#msData").value) $("#msData").value = iso(new Date());
+  msg("#mMsg");
+  try {
+    const [cargas, abs, maquinas, plano, servicos] = await Promise.all([todasLinhas("diesel_cargas", "retirado_em"), todasLinhas("diesel_abastecimentos", "abastecido_em"),
+      todasLinhas("maquinas", "nome"), todasLinhas("manut_plano", "id"), todasLinhas("manut_servicos", "feito_em")]);
+    dz = { ...dz, cargas, abs, maquinas };
+    calcularConsumo();
+    mz = { maquinas, plano, servicos };
+  } catch (e) {
+    return msg("#mMsg", "erro", /does not exist|schema cache|propria/i.test(e.message || "") ? "A manutenção ainda não foi ligada no banco. Rode a query 016 no Supabase." : erroTxt(e));
+  }
+  const proprias = mz.maquinas.filter(m => m.propria && m.ativo !== false);
+  const sel = $("#mMaq").value;
+  $("#mMaq").innerHTML = proprias.map(m => `<option value="${m.id}">${esc(m.nome)}</option>`).join("");
+  if (proprias.some(m => String(m.id) === sel)) $("#mMaq").value = sel;
+  $("#mfOutra").innerHTML = '<option value="">—</option>' + mz.maquinas.filter(m => !m.propria && m.ativo !== false).map(m => `<option value="${m.id}">${esc(m.nome)}</option>`).join("");
+  if (!proprias.length) { $("#mKpis").innerHTML = ""; return msg("#mMsg", "aviso", "Nenhuma máquina própria cadastrada. Rode a query 016 ou inclua uma máquina na ficha."); }
+  mostrarManut();
+}
+
+// situação de cada serviço do plano: último feito (pelo histórico) e quanto falta
+function situacaoPlano(maqId, atual) {
+  const feitos = mz.servicos.filter(s => s.maquina_id === maqId && s.situacao === "valida" && s.plano_id != null && s.horimetro != null);
+  return mz.plano.filter(p => p.maquina_id === maqId && p.ativo).map(p => {
+    const ult = feitos.filter(s => s.plano_id === p.id).reduce((m, s) => Math.max(m, Number(s.horimetro)), -1);
+    const feito = ult >= 0 ? ult : null, proxima = feito != null ? feito + Number(p.intervalo_h) : null;
+    return { ...p, feito, proxima, falta: proxima != null && atual != null ? proxima - atual : null };
+  });
+}
+
+function mostrarManut() {
+  const id = Number($("#mMaq").value), m = mz.maquinas.find(x => x.id === id), de = $("#mDe").value, ate = $("#mAte").value;
+  const absM = dz.abs.filter(a => a.maquina_id === id && a.situacao === "valida");
+  const servM = mz.servicos.filter(s => s.maquina_id === id);
+  const atual = Math.max(...absM.map(a => Number(a.horimetro)), ...servM.filter(s => s.situacao === "valida" && s.horimetro != null).map(s => Number(s.horimetro)), -1);
+  const hAtual = atual >= 0 ? atual : null;
+  const ultAbs = absM.reduce((u, a) => !u || a.abastecido_em > u.abastecido_em ? a : u, null);
+  const plano = situacaoPlano(id, hAtual);
+  const vencidas = plano.filter(p => p.falta != null && p.falta < 0), proximas = plano.filter(p => p.falta != null && p.falta >= 0 && p.falta <= 80);
+  // custos do período
+  const servPer = servM.filter(s => s.situacao === "valida" && s.feito_em >= de && s.feito_em <= ate);
+  const custoManut = servPer.reduce((t, s) => t + Number(s.valor || 0), 0);
+  const absPer = absM.filter(a => { const d = dataBR(a.abastecido_em); return d >= de && d <= ate; });
+  const rd = resumoDiesel(absPer), horas = rd.horas || 0;
+  const porHora = v => horas ? real(v / horas) + " por hora" : "sem horas no período";
+  $("#mKpis").innerHTML = [
+    ["Horímetro atual", horasTxt(hAtual), ultAbs ? `do último abastecimento (${dataHora(ultAbs.abastecido_em).slice(0, 5)})` : "nenhum abastecimento lançado"],
+    ["Manutenções vencidas", vencidas.length, proximas.length ? `e ${proximas.length} vence(m) nas próximas 80 h` : "nenhuma vencendo nas próximas 80 h", vencidas.length ? "erro" : ""],
+    ["Custo de manutenção", real(custoManut), `no período · ${porHora(custoManut)}`],
+    ["Custo de diesel", real(rd.custo), `no período · ${lit(rd.litros)} L${rd.semValor ? ` (${lit(rd.semValor)} L sem valor)` : ""}`],
+    ["Custo total da máquina", real(custoManut + rd.custo), horas ? `${porHora(custoManut + rd.custo)} trabalhada (${lit(horas)} h)` : "sem horas no período"]]
+    .map(([t, v, d, c]) => `<div class="kpi" ${c ? 'style="border-color:var(--erro)"' : ""}><small>${t}</small><b ${c ? 'style="color:var(--erro)"' : ""}>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
+  const sit = p => p.feito == null ? '<span style="color:var(--suave)">sem registro</span>'
+    : p.falta < 0 ? `<span style="color:var(--erro);font-weight:600">atrasada ${lit(-p.falta)} h</span>`
+    : p.falta <= 80 ? `<span style="color:var(--aviso);font-weight:600">faltam ${lit(p.falta)} h</span>`
+    : `<span style="color:var(--ok)">faltam ${lit(p.falta)} h</span>`;
+  const adm = papel === "admin";
+  $("#mPlano").innerHTML = !plano.length ? '<div class="vazio">Nenhum serviço no plano.</div>' :
+    `<table><tr><th>Serviço</th><th class="n">Intervalo</th><th class="n">Feito em</th><th class="n">Próxima</th><th>Situação</th><th></th></tr>` +
+    plano.map(p => `<tr><td>${esc(p.servico)}${p.a_confirmar ? ' <small class="alerta">a confirmar</small>' : ""}</td><td class="n">a cada ${lit(p.intervalo_h)} h</td><td class="n">${horasTxt(p.feito)}</td><td class="n">${horasTxt(p.proxima)}</td><td>${sit(p)}</td>` +
+      `<td style="white-space:nowrap"><button class="mini" data-mfeito="${p.id}">Feito</button>${adm ? ` <button class="mini" data-mintervalo="${p.id}">Intervalo</button> <button class="mini" data-mtirar="${p.id}">Tirar</button>` : ""}</td></tr>`).join("") + "</table>";
+  $("#msPlano").innerHTML = '<option value="">— fora do plano —</option>' + plano.map(p => `<option value="${p.id}">${esc(p.servico)}</option>`).join("");
+  // ficha
+  $("#mfModelo").value = m.marca_modelo || ""; $("#mfSerie").value = m.numero_serie || ""; $("#mfAno").value = m.ano || ""; $("#mfUso").value = m.uso || ""; $("#mfManual").value = "";
+  for (const i of ["#mfModelo", "#mfSerie", "#mfAno", "#mfUso", "#mfManual"]) $(i).disabled = !adm;
+  $("#mfManualVer").innerHTML = m.manual_caminho ? `<button class="mini" data-mmanual="${esc(m.manual_caminho)}">Ver manual</button>` : '<small style="color:var(--suave)">Manual ainda não anexado.</small>';
+  // atenção
+  const al = [];
+  vencidas.forEach(p => al.push(`<b>${esc(p.servico)}</b> atrasada ${lit(-p.falta)} h.`));
+  proximas.forEach(p => al.push(`${esc(p.servico)} em ${lit(p.falta)} h.`));
+  const semReg = plano.filter(p => p.feito == null);
+  if (semReg.length) al.push(`${semReg.length} serviço(s) do plano sem registro. Lance a última vez que foi feito (data e horímetro) para o sistema calcular a próxima.`);
+  const aConf = plano.filter(p => p.a_confirmar).length;
+  if (aConf) al.push(`${aConf} intervalo(s) a confirmar no manual do fabricante.`);
+  const corr = servPer.filter(s => s.tipo === "corretiva");
+  if (corr.length) al.push(`${corr.length} conserto(s) por quebra no período: ${corr.map(s => esc(s.descricao)).join(", ")}.`);
+  $("#mAlertas").innerHTML = al.length ? al.map(x => `<li>${x}</li>`).join("") : "<li>Tudo em dia.</li>";
+  // histórico
+  const hist = servM.filter(s => s.feito_em >= de && s.feito_em <= ate).sort((a, b) => a.feito_em < b.feito_em ? 1 : -1);
+  $("#mHist").innerHTML = !hist.length ? '<div class="vazio">Nenhum serviço no período.</div>' :
+    `<table><tr><th>Data</th><th class="n">Horímetro</th><th>Tipo</th><th>O que foi feito</th><th>Peças</th><th class="n">Valor</th><th>Quem fez</th><th></th></tr>` +
+    hist.map(s => `<tr class="${s.situacao === "cancelada" ? "cancelada" : ""}"><td>${br(s.feito_em)}</td><td class="n">${horasTxt(s.horimetro)}</td><td>${s.tipo === "corretiva" ? '<span style="color:var(--erro)">Conserto</span>' : "Preventiva"}</td>` +
+      `<td>${esc(s.descricao)}${s.situacao === "cancelada" ? ` <small class="alerta">cancelado: ${esc(s.motivo_cancelamento)}</small>` : ""}</td><td>${esc(s.pecas || "—")}</td><td class="n">${real(s.valor)}</td><td>${esc(s.quem_fez || "—")}</td>` +
+      `<td style="white-space:nowrap">${s.nota_caminho ? `<button class="mini" data-mmanual="${esc(s.nota_caminho)}">Ver nota</button>` : ""}${adm && s.situacao === "valida" ? ` <button class="mini" data-mcancelar="${s.id}">Cancelar</button>` : ""}</td></tr>`).join("") +
+    `<tr class="dia"><td colspan="5">TOTAL NO PERÍODO</td><td class="n">${real(custoManut)}</td><td></td><td></td></tr></table>`;
+}
+
+$("#btManut").addEventListener("click", carregarManut);
+$("#mMaq").addEventListener("change", mostrarManut);
+for (const i of ["#mDe", "#mAte"]) $(i).addEventListener("change", () => mz && mostrarManut());
+$("#msPlano").addEventListener("change", e => {
+  const p = mz?.plano.find(x => String(x.id) === e.target.value);
+  if (p) { $("#msTipo").value = "preventiva"; if (!$("#msDesc").value.trim()) $("#msDesc").value = p.servico; }
+});
+$("#aba-manutencao").addEventListener("click", async e => {
+  const d = e.target.dataset;
+  if (d.mmanual) return abrirFotoDiesel(d.mmanual);
+  if (d.mfeito) {
+    const p = mz.plano.find(x => String(x.id) === d.mfeito);
+    $("#msPlano").value = d.mfeito; $("#msTipo").value = "preventiva"; $("#msDesc").value = p.servico;
+    const k = $("#mKpis .kpi b")?.textContent.replace(/[^\d,]/g, "").replace(",", ".");
+    if (!$("#msHorimetro").value && k) $("#msHorimetro").value = k.replace(".", ",");
+    $("#mForm").scrollIntoView({ behavior: "smooth" }); $("#msHorimetro").focus();
+    return msg("#msMsg", "aviso", `Confira a data e o horímetro de quando "${esc(p.servico)}" foi feito, preencha peças e valor e clique em Salvar serviço.`);
+  }
+  if (d.mintervalo) {
+    const p = mz.plano.find(x => String(x.id) === d.mintervalo);
+    const v = prompt(`"${p.servico}": fazer a cada quantas horas? (conforme o manual do fabricante)`, String(p.intervalo_h).replace(".", ","));
+    if (v === null) return;
+    const n = numero(v); if (!(n > 0)) return alert("Informe um número de horas maior que zero.");
+    const { error } = await db.from("manut_plano").update({ intervalo_h: n, a_confirmar: false }).eq("id", p.id);
+    if (error) return alert(error.message);
+    return carregarManut();
+  }
+  if (d.mtirar) {
+    const p = mz.plano.find(x => String(x.id) === d.mtirar);
+    if (!confirm(`Tirar "${p.servico}" do plano? O histórico dos serviços continua guardado.`)) return;
+    const { error } = await db.from("manut_plano").update({ ativo: false }).eq("id", p.id);
+    if (error) return alert(error.message);
+    return carregarManut();
+  }
+  if (d.mcancelar) {
+    const motivo = prompt("Motivo do cancelamento deste serviço:");
+    if (!motivo || !motivo.trim()) return;
+    const { error } = await db.rpc("cancelar_servico_manut", { p_id: Number(d.mcancelar), p_motivo: motivo.trim() });
+    if (error) return alert(error.message);
+    return carregarManut();
+  }
+});
+$("#btServico").addEventListener("click", async () => {
+  const desc = $("#msDesc").value.trim(), horim = numero($("#msHorimetro").value.replace(/\./g, "")), valor = numero($("#msValor").value.replace(/\./g, ""));
+  if (!$("#msData").value) return msg("#msMsg", "erro", "Informe a data do serviço.");
+  if (!desc) return msg("#msMsg", "erro", "Escreva o que foi feito.");
+  if ($("#msPlano").value && horim == null) return msg("#msMsg", "erro", "Serviço do plano precisa do horímetro, para calcular a próxima.");
+  if (horim != null && !(horim >= 0) || valor != null && !(valor >= 0)) return msg("#msMsg", "erro", "Confira o horímetro e o valor: use só números.");
+  $("#btServico").disabled = true;
+  try {
+    const nota = await enviarFotoDiesel("manutencao", $("#msNota").files[0]);
+    const { error } = await db.from("manut_servicos").insert({ maquina_id: Number($("#mMaq").value), plano_id: $("#msPlano").value ? Number($("#msPlano").value) : null,
+      feito_em: $("#msData").value, horimetro: horim, tipo: $("#msTipo").value, descricao: desc, pecas: $("#msPecas").value.trim() || null,
+      valor, quem_fez: $("#msQuem").value.trim() || null, nota_caminho: nota, situacao: "valida", registrado_por: usuario.id });
+    if (error) throw error;
+    for (const i of ["#msHorimetro", "#msDesc", "#msPecas", "#msValor", "#msQuem", "#msNota"]) $(i).value = "";
+    $("#msPlano").value = "";
+    await carregarManut();
+    msg("#msMsg", "ok", "Serviço salvo.");
+  } catch (e) { msg("#msMsg", "erro", "Não foi salvo. " + erroTxt(e)); }
+  $("#btServico").disabled = false;
+});
+$("#btFicha").addEventListener("click", async () => {
+  const id = Number($("#mMaq").value), ano = $("#mfAno").value.trim();
+  try {
+    const manual = await enviarFotoDiesel("manuais", $("#mfManual").files[0]);
+    const dados = { marca_modelo: $("#mfModelo").value.trim() || null, numero_serie: $("#mfSerie").value.trim() || null, ano: ano ? Number(ano) : null, uso: $("#mfUso").value.trim() || null };
+    if (manual) dados.manual_caminho = manual;
+    const { error } = await db.from("maquinas").update(dados).eq("id", id);
+    if (error) throw error;
+    await carregarManut(); msg("#mMsg", "ok", "Ficha salva.");
+  } catch (e) { msg("#mMsg", "erro", "Ficha não foi salva. " + erroTxt(e)); }
+});
+$("#btPlanoAdd").addEventListener("click", async () => {
+  const servico = $("#mpServico").value.trim(), n = numero($("#mpIntervalo").value);
+  if (!servico || !(n > 0)) return msg("#mMsg", "erro", "Informe o serviço e de quantas em quantas horas.");
+  const { error } = await db.from("manut_plano").insert({ maquina_id: Number($("#mMaq").value), servico, intervalo_h: n, a_confirmar: false });
+  if (error) return msg("#mMsg", "erro", /duplicate|unique/i.test(error.message) ? "Esse serviço já está no plano." : erroTxt(error));
+  $("#mpServico").value = ""; $("#mpIntervalo").value = ""; carregarManut();
+});
+$("#btPropria").addEventListener("click", async () => {
+  const id = $("#mfOutra").value; if (!id) return;
+  const nome = $("#mfOutra").selectedOptions[0].text;
+  if (!confirm(`Incluir "${nome}" na manutenção como máquina própria da Geolux?`)) return;
+  const { error } = await db.from("maquinas").update({ propria: true }).eq("id", Number(id));
+  if (error) return msg("#mMsg", "erro", erroTxt(error));
+  await carregarManut(); $("#mMaq").value = id; mostrarManut();
 });
 </script>
 </body>
