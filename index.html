@@ -589,10 +589,12 @@ async function iniciar() {
   document.querySelectorAll("[data-admin]").forEach(b => b.classList.toggle("escondido", papel !== "admin"));
   // balança: só pesagem; encarregado do diesel: só diesel; administrador: tudo
   document.querySelector('#abas [data-grupo="diesel"]').classList.toggle("escondido", papel === "balanca");
-  document.querySelector('#abas [data-grupo="pesagem"]').classList.toggle("escondido", papel === "diesel");
+  // encarregado do diesel: do controle de pesagem, só o Painel, para consulta
+  if (papel === "diesel") document.querySelectorAll('#abas [data-grupo="pesagem"] button').forEach(b => b.classList.toggle("escondido", b.dataset.aba !== "painel"));
   $("#login").classList.add("escondido"); $("#app").classList.remove("escondido");
   if (papel !== "balanca") enviarFila();
   if (papel === "diesel") {
+    aplicarAtalhoPainel("mes");
     document.querySelector('#abas [data-parte="abastecer"]').click();
     return;
   }
@@ -1356,12 +1358,12 @@ async function carregarPainel() {
   const comMov = new Set(todos.map(x => x.data)), semRel = [];
   for (let d = de > primeiraData ? de : primeiraData; d < fimContagem; d = somaDias(d, 1))
     if (new Date(d + "T12:00:00").getDay() !== 0 && !comMov.has(d)) semRel.push(br(d).slice(0, 5));
-  if (semRel.length) al.push(`<b>${semRel.length} dia(s) de segunda a sábado sem relatório anexado:</b> ${semRel.slice(0, 20).join(", ")}${semRel.length > 20 ? "…" : ""}. Se teve expedição, falta anexar.`);
+  if (semRel.length && papel !== "diesel") al.push(`<b>${semRel.length} dia(s) de segunda a sábado sem relatório anexado:</b> ${semRel.slice(0, 20).join(", ")}${semRel.length > 20 ? "…" : ""}. Se teve expedição, falta anexar.`);
   const ativos = (imps || []).filter(i => !um(i.importacao_cancelamentos));
   const semConf = ativos.filter(i => !um(i.conferencias)).length;
   const paraVer = ativos.filter(i => um(i.conferencias) && !um(um(i.conferencias).conferencias_vistas)).length;
   if (paraVer && papel === "admin") al.push(`<b>${paraVer} conferência(s) da balança</b> aguardando você na aba Anexar relatório.`);
-  if (semConf) al.push(`${semConf} relatório(s) anexado(s) que a balança ainda não conferiu.`);
+  if (semConf && papel !== "diesel") al.push(`${semConf} relatório(s) anexado(s) que a balança ainda não conferiu.`);
   const semMot = ps.filter(x => !x.motorista).length;
   if (semMot) al.push(`${semMot} carrada(s) do período sem motorista (${Math.round(semMot / ps.length * 100)}%).`);
   const conferir = ps.filter(alertas).length;
