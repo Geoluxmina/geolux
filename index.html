@@ -1327,7 +1327,7 @@ async function carregarCadastros() {
   const opJuntar = c => `<select data-juntar="${c.id}"><option value="">—</option>${principais.filter(x => x.id !== c.id).map(x => `<option value="${x.id}">${esc(x.nome)} (${esc(x.nome_balanca)})</option>`).join("")}</select>`;
   $("#tabClientes").innerHTML = `<table><tr><th>Nome na balança</th><th>Nome completo</th><th>CPF/CNPJ</th><th>Telefone</th>${juntar ? "<th>Juntar com</th>" : ""}<th></th></tr>` +
     principais.map(c => `<tr data-cliente="${c.id}"><td>${esc(c.nome_balanca)}</td><td><input value="${esc(c.nome)}" data-campo="nome"></td><td><input value="${esc(c.cpf_cnpj)}" data-campo="cpf_cnpj"></td><td><input value="${esc(c.telefone)}" data-campo="telefone"></td>${juntar ? `<td>${opJuntar(c)}</td>` : ""}<td><button class="mini" data-salvar="${c.id}">Salvar</button></td></tr>`).join("") + "</table>" +
-    (juntar ? '<p style="color:var(--suave);font-size:13px">Juntar com: use quando a balança escrever o mesmo cliente com outro nome. O nome some da lista e todas as carradas dele passam a contar no cliente escolhido.</p>' : "");
+    (juntar ? '<p style="color:var(--suave);font-size:13px">Juntar com: use quando a balança escrever o mesmo cliente com outro nome. Ao escolher o cliente, o sistema pede confirmação; confirmando, o nome some da lista e todas as carradas dele passam a contar no cliente escolhido.</p>' : "");
   $("#tabUsuarios").innerHTML = `<table><tr><th>E-mail</th><th>Nome</th><th>Perfil</th></tr>` +
     (us || []).map(u => `<tr><td>${esc(u.email)}</td><td>${esc(u.nome || "")}</td><td>${NOMES_PAPEL[u.papel] || esc(u.papel)}</td></tr>`).join("") + "</table>";
 }
@@ -1371,23 +1371,26 @@ $("#tabPlacas").addEventListener("click", async e => {
   const { error } = await db.from("placas").update(dados).eq("placa", placa);
   if (error) alert(error.message); else e.target.textContent = "Salvo";
 });
+// juntar dois nomes da balança (só administrador): pede confirmação assim que escolhe o cliente
+$("#tabClientes").addEventListener("change", async e => {
+  const sel = e.target.closest("[data-juntar]"); if (!sel || !sel.value || papel !== "admin") return;
+  const id = Number(sel.dataset.juntar), alvoId = Number(sel.value), tr = sel.closest("tr");
+  const alvo = sel.options[sel.selectedIndex].text.replace(/ \([^)]*\)$/, ""), origem = tr.cells[0].innerText.trim();
+  if (!confirm(`Confirma juntar "${origem}" com "${alvo}"?\n\nO cadastro "${origem}" some da lista e todas as carradas e placas dele passam a contar como "${alvo}".`)) { sel.value = ""; return; }
+  const r = await db.from("clientes").select("nome").eq("id", alvoId).single();
+  const nome = r.data?.nome || alvo;
+  let { error } = await db.from("clientes").update({ unir_em: alvoId, nome }).eq("id", id);
+  if (!error) ({ error } = await db.from("clientes").update({ unir_em: alvoId, nome }).eq("unir_em", id));
+  if (!error) ({ error } = await db.from("placas").update({ cliente_id: alvoId }).eq("cliente_id", id));
+  if (error) { sel.value = ""; return alert(error.message); }
+  carregarFiltros(); carregarCadastros();
+});
 $("#tabClientes").addEventListener("click", async e => {
   const id = e.target.dataset.salvar; if (!id) return;
   const tr = e.target.closest("tr"), dados = {};
   tr.querySelectorAll("input").forEach(i => dados[i.dataset.campo] = i.value.trim() || null);
   if (!dados.nome) return alert("O nome completo não pode ficar vazio.");
-  const sel = tr.querySelector("[data-juntar]");
-  if (sel?.value) {
-    const alvo = sel.options[sel.selectedIndex].text.replace(/ \([^)]*\)$/, "");
-    if (!confirm(`Juntar ${tr.cells[0].innerText.split("\n")[0]} com ${alvo}? Todas as carradas deste nome passam a contar como ${alvo}.`)) return;
-    dados.unir_em = Number(sel.value);
-    const r = await db.from("clientes").select("nome").eq("id", dados.unir_em).single();
-    if (r.data) dados.nome = r.data.nome;
-    await db.from("placas").update({ cliente_id: dados.unir_em }).eq("cliente_id", id);
-    await db.from("clientes").update({ unir_em: dados.unir_em, nome: dados.nome }).eq("unir_em", id);
-  }
   const { error } = await db.from("clientes").update(dados).eq("id", id);
-  if (!error && dados.unir_em) { carregarFiltros(); return carregarCadastros(); }
   if (error) alert(error.message); else { e.target.textContent = "Salvo"; carregarFiltros(); }
 });
 
