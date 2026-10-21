@@ -157,6 +157,7 @@
           </select>
         </label>
         <label>Cliente <select id="pCliente"><option value="">Todos</option></select></label>
+        <label>Produto <select id="pProduto"><option value="">Todos</option></select></label>
         <button class="bt" id="btPainel">Atualizar</button>
         <button class="bt sec" id="btPainelPdf">Extrato do período (PDF)</button>
       </div>
@@ -181,6 +182,7 @@
         </div>
         <div class="card">
           <h3 style="margin-top:0">Por produto</h3>
+          <p style="margin-top:0;color:var(--suave);font-size:13px">Clique num produto para ver só os números dele.</p>
           <div class="tabela" id="pProdutos"></div>
         </div>
       </div>
@@ -507,12 +509,17 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const kg = v => Math.round(v).toLocaleString("pt-BR");
 const ton = v => (v / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const normNome = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 // produtos vendidos por carrada (não se pesa): contam como carrada e ficam fora das toneladas
 const POR_CARRADA = ["barro"];
-const ehPorCarrada = p => POR_CARRADA.some(n => String(p.produto || p.produto_balanca || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() === n);
+// vale o nome cadastrado ou o nome da balança ("BARRO", "Barro vermelho"...)
+const ehPorCarrada = p => [p.produto, p.produto_balanca].some(t => { const x = normNome(t); return POR_CARRADA.some(n => new RegExp(`\\b${n}\\b`).test(x)); });
 const liqTxt = p => p.por_carrada ? "por carrada" : kg(p.liquido_kg);
 // toneladas de um grupo; grupo só de barro mostra "por carrada"
 const tonG = g => g.pesadas === 0 ? "por carrada" : ton(g.kg);
+// total de uma lista: só barro mostra "por carrada"
+const soBarro = ps => ps.length > 0 && ps.every(p => p.por_carrada);
+const tonTot = (ps, kg) => soBarro(ps) ? "por carrada" : ton(kg);
 const barroTxt = ps => { const n = ps.filter(p => p.por_carrada).length; return n ? ` + ${n} carrada${n > 1 ? "s" : ""} de barro` : ""; };
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const br = s => s ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : "";
@@ -553,10 +560,11 @@ function alertas(p) {
   const a = [];
   if (!p.motorista) a.push("motorista não informado");
   const min = (new Date(p.saida_em) - new Date(p.entrada_em)) / 60000;
-  if (min <= 0) a.push("saída no mesmo minuto da entrada");
+  if (p.por_carrada) {} // barro não pesa: entrada e saída podem ser o mesmo registro
+  else if (min <= 0) a.push("saída no mesmo minuto da entrada");
   else if (min > 180) a.push(`${(min / 60).toFixed(1).replace(".", ",")} h entre entrada e saída`);
   if (!p.por_carrada && p.liquido_kg !== p.peso_saida_kg - p.peso_entrada_kg) a.push("líquido diferente de saída menos entrada");
-  if (!p.produto) a.push(`produto "${p.produto_balanca}" sem associação`);
+  if (!p.produto || p.produto_auto) a.push(`produto "${p.produto_balanca}" sem associação`);
   return a.join("; ");
 }
 
@@ -564,6 +572,7 @@ function alertas(p) {
 // O relatório (Crystal Reports) traz cada campo como um texto separado, sempre na mesma coluna.
 const DATA_HORA = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/;
 const PESO = /^[\d.]+$/;
+const TIPO_COL = { peso_ent: "peso", peso_sai: "peso", liquido: "peso", data_ent: "data", data_sai: "data" };
 const num = s => parseInt(String(s).replace(/\D/g, ""), 10);
 const paraIso = s => `${s.slice(6, 10)}-${s.slice(3, 5)}-${s.slice(0, 2)}T${s.slice(11, 16)}:00`;
 
@@ -588,7 +597,8 @@ async function lerPdf(buf) {
 
 function interpretar(linhas) {
   // posições das colunas pelo cabeçalho (com valores padrão caso o cabeçalho mude)
-  const ancoras = { ticket: 13, placa: 68, produto: 108, cliente: 173, transportador: 255, motorista: 331, nota: 392 };
+  const ancoras = { ticket: 13, placa: 68, produto: 108, cliente: 173, transportador: 255, motorista: 331, nota: 392,
+                    op_ent: 430, peso_ent: 498, data_ent: 536, op_sai: 602, peso_sai: 665, data_sai: 697, liquido: 777 };
   const nomesCab = { "Tiquetes": "ticket", "Placa": "placa", "Produto": "produto", "Cliente ou": "cliente",
                      "Transportador": "transportador", "Motorista": "motorista", "Nº Nota": "nota" };
   for (const l of linhas) for (const it of l) if (nomesCab[it.s]) ancoras[nomesCab[it.s]] = it.x;
@@ -602,22 +612,39 @@ function interpretar(linhas) {
     if (iTot >= 0) { const v = textos.slice(iTot + 1).map(num); totais = { carradas: v[0], entrada: v[1], saida: v[2], liquido: v[3] }; continue; }
     if (!/^\d{3,}$/.test(textos[0] || "")) continue;
     const datas = textos.filter(t => DATA_HORA.test(t));
-    if (datas.length !== 2 || l.length < 12) { naoLidas.push(textos.join(" | ")); continue; }
     const fim = l.slice(-7).map(i => i.s);                // op_ent, peso_ent, data_ent, op_sai, peso_sai, data_sai, liquido
-    if (!PESO.test(fim[1]) || !DATA_HORA.test(fim[2]) || !PESO.test(fim[4]) || !DATA_HORA.test(fim[5]) || !PESO.test(fim[6])) {
-      naoLidas.push(textos.join(" | ")); continue;
-    }
+    const completa = datas.length === 2 && l.length >= 12 && PESO.test(fim[1]) && DATA_HORA.test(fim[2]) && PESO.test(fim[4]) && DATA_HORA.test(fim[5]) && PESO.test(fim[6]);
     const r = { ticket: num(textos[0]), placa: "", produto_balanca: "", cliente_balanca: "", transportador: "", motorista: "", nota: "" };
     const mapa = { placa: "placa", produto: "produto_balanca", cliente: "cliente_balanca", transportador: "transportador", motorista: "motorista", nota: "nota" };
-    for (const it of l.slice(1, -7)) {
-      const [col] = cols.reduce((m, c) => Math.abs(c[1] - it.x) < Math.abs(m[1] - it.x) ? c : m);
-      if (mapa[col]) r[mapa[col]] = (r[mapa[col]] ? r[mapa[col]] + " " : "") + it.s;
+    if (completa) {
+      for (const it of l.slice(1, -7)) {
+        const [col] = cols.reduce((m, c) => Math.abs(c[1] - it.x) < Math.abs(m[1] - it.x) ? c : m);
+        if (mapa[col]) r[mapa[col]] = (r[mapa[col]] ? r[mapa[col]] + " " : "") + it.s;
+      }
+      Object.assign(r, {
+        operador_entrada: fim[0], peso_entrada_kg: num(fim[1]), entrada_em: paraIso(fim[2]),
+        operador_saida: fim[3], peso_saida_kg: num(fim[4]), saida_em: paraIso(fim[5]), liquido_kg: num(fim[6]),
+      });
+    } else {
+      // linha com peso ou hora em branco (barro passa na balança sem pesar): lê cada campo pela coluna
+      // e aceita só produto vendido por carrada; o resto continua como "não reconhecida"
+      const v = {};
+      for (const it of l.slice(1)) {
+        const tipo = DATA_HORA.test(it.s) ? "data" : PESO.test(it.s) && it.x > ancoras.nota + 20 ? "peso" : "texto";
+        const permitidas = cols.filter(c => (TIPO_COL[c[0]] || "texto") === tipo);
+        const [col] = permitidas.reduce((m, c) => Math.abs(c[1] - it.x) < Math.abs(m[1] - it.x) ? c : m);
+        v[col] = (v[col] ? v[col] + " " : "") + it.s;
+      }
+      for (const [col, campo] of Object.entries(mapa)) if (v[col]) r[campo] = v[col];
+      const ent = v.data_ent || v.data_sai, sai = v.data_sai || v.data_ent;
+      if (!ent || !ehPorCarrada(r)) { naoLidas.push(textos.join(" | ")); continue; }
+      Object.assign(r, {
+        operador_entrada: v.op_ent || "", peso_entrada_kg: v.peso_ent ? num(v.peso_ent) : 0, entrada_em: paraIso(ent),
+        operador_saida: v.op_sai || "", peso_saida_kg: v.peso_sai ? num(v.peso_sai) : 0, saida_em: paraIso(sai),
+        liquido_kg: v.liquido ? num(v.liquido) : 0, sem_peso: true,
+      });
     }
     for (const c of ["transportador", "motorista"]) if (/^n[aã]o informado$/i.test(r[c])) r[c] = "";
-    Object.assign(r, {
-      operador_entrada: fim[0], peso_entrada_kg: num(fim[1]), entrada_em: paraIso(fim[2]),
-      operador_saida: fim[3], peso_saida_kg: num(fim[4]), saida_em: paraIso(fim[5]), liquido_kg: num(fim[6]),
-    });
     pesagens.push(r);
   }
   const soma = { carradas: pesagens.length, entrada: 0, saida: 0, liquido: 0 };
@@ -746,7 +773,9 @@ $("#arquivo").addEventListener("change", async e => {
     const limiteAntigo = iso(new Date(Date.now() - 7 * 86400000));
     if (papel === "admin" && !$("#historico").checked && r.pesagens.length && r.pesagens.every(p => p.saida_em.slice(0, 10) < limiteAntigo))
       html += `<div class="msg aviso">Todas as carradas deste relatório têm mais de 7 dias. Se for um relatório antigo, marque "Relatórios antigos" acima antes de gravar.</div>`;
-    html += tabelaPesagens(r.pesagens.map(p => ({ ...p, produto: conhecidos.get(p.produto_balanca.toLowerCase()) ? "ok" : null }))) + "</div>";
+    const semPeso = r.pesagens.filter(p => p.sem_peso).length;
+    if (semPeso) html += `<div class="msg ok">${semPeso} carrada(s) de barro sem pesagem completa na balança: entram contadas por carrada.</div>`;
+    html += tabelaPesagens(r.pesagens.map(p => ({ ...p, produto: conhecidos.get(p.produto_balanca.toLowerCase()) ? "ok" : null, por_carrada: ehPorCarrada(p) }))) + "</div>";
     if (!ja && r.pesagens.length) lidos.push({ nome: f.name, buf, hash, ...r });
   }
   $("#previa").innerHTML = html || '<div class="vazio">Nenhum arquivo.</div>';
@@ -791,7 +820,7 @@ $("#btGravar").addEventListener("click", async () => {
       const apel = [...new Set(r.pesagens.map(p => p.produto_balanca.toLowerCase()))].map(a => ({ apelido: a }));
       res = await db.from("produto_apelidos").upsert(apel, { onConflict: "apelido", ignoreDuplicates: true });
       if (res.error) throw res.error;
-      res = await db.from("pesagens").upsert(r.pesagens.map(p => ({ ...p, importacao_id: imp.data.id })),
+      res = await db.from("pesagens").upsert(r.pesagens.map(({ sem_peso, ...p }) => ({ ...p, importacao_id: imp.data.id })),
                                               { onConflict: "ticket", ignoreDuplicates: true }).select("ticket");
       if (res.error) throw res.error;
       const gravadas = new Set(res.data.map(x => x.ticket));
@@ -910,7 +939,7 @@ async function buscar(de, ate, { canceladas = false } = {}) {
     if (data.length < 1000) break;
   }
   return todas.filter(p => !(p.motivo_cancelamento || "").startsWith("Anexo cancelado: ")).map(p => {
-    if (ehPorCarrada(p)) { p.por_carrada = true; p.liquido_balanca_kg = p.liquido_kg; p.liquido_kg = 0; }
+    if (ehPorCarrada(p)) { p.por_carrada = true; p.liquido_balanca_kg = p.liquido_kg; p.liquido_kg = 0; if (!p.produto) { p.produto = "Barro"; p.produto_auto = true; } }
     return p;
   });
 }
@@ -974,7 +1003,7 @@ async function mostrarRelatorio() {
   const v = VISOES[visao], linhas = agrupar(validas, v.chave);
   $("#relTabela").innerHTML = `<table><tr>${v.cols.map(c => `<th>${c}</th>`).join("")}<th class="n">Carradas</th><th class="n">Toneladas</th><th class="n">% do total</th></tr>` +
     linhas.map(l => `<tr>${l.v.map(c => `<td>${esc(c)}</td>`).join("")}<td class="n">${l.carradas}</td><td class="n">${tonG(l)}</td><td class="n">${l.pesadas ? (l.kg / (tot || 1) * 100).toFixed(1).replace(".", ",") + "%" : "—"}</td></tr>`).join("") +
-    `<tr class="dia"><td colspan="${v.cols.length}">TOTAL</td><td class="n">${validas.length}</td><td class="n">${ton(tot)}</td><td class="n">100%</td></tr></table>`;
+    `<tr class="dia"><td colspan="${v.cols.length}">TOTAL</td><td class="n">${validas.length}</td><td class="n">${tonTot(validas, tot)}</td><td class="n">${soBarro(validas) ? "—" : "100%"}</td></tr></table>`;
 }
 
 function tabelaDetalhada(ps) {
@@ -1350,33 +1379,42 @@ async function carregarPainel() {
     [todos, todosAnt, { data: imps }] = await Promise.all([buscar(de, ate), buscar(deAnt, ateAnt),
       db.from("importacoes").select("id,importacao_cancelamentos(motivo),conferencias(enviado_em,conferencias_vistas(visto_em))").order("importado_em", { ascending: false }).limit(60)]);
   } catch (e) { return $("#pKpis").innerHTML = `<div class="msg erro">${erroTxt(e)}</div>`; }
+  // filtro de produto: os produtos do período; o resto do painel passa a mostrar só o produto escolhido
+  const nomeProd = x => x.produto || x.produto_balanca;
+  const prodSel = $("#pProduto").value, prods = [...new Set(todos.map(nomeProd))].sort();
+  $("#pProduto").innerHTML = '<option value="">Todos</option>' + prods.map(c => `<option ${c === prodSel ? "selected" : ""}>${esc(c)}</option>`).join("");
+  const comMov = new Set(todos.map(x => x.data));
+  if (prodSel) { todos = todos.filter(x => nomeProd(x) === prodSel); todosAnt = todosAnt.filter(x => nomeProd(x) === prodSel); }
   // lista de clientes do filtro: os do período
   const cliSel = $("#pCliente").value, nomes = [...new Set(todos.map(x => x.cliente))].sort();
   $("#pCliente").innerHTML = '<option value="">Todos</option>' + nomes.map(c => `<option ${c === cliSel ? "selected" : ""}>${esc(c)}</option>`).join("");
   painelAtual = { todos, de, ate };
   const ps = cliSel ? todos.filter(x => x.cliente === cliSel) : todos, ant = cliSel ? todosAnt.filter(x => x.cliente === cliSel) : todosAnt;
   const kgT = ps.reduce((s, x) => s + x.liquido_kg, 0), kgA = ant.reduce((s, x) => s + x.liquido_kg, 0);
-  $("#pPeriodo").innerHTML = `<b>${cliSel ? esc(cliSel) : "Todos os clientes"}</b> · de ${br(de)} a ${br(ate)} (${n} dia${n > 1 ? "s" : ""}). ` +
+  $("#pPeriodo").innerHTML = `<b>${cliSel ? esc(cliSel) : "Todos os clientes"}${prodSel ? " · " + esc(prodSel) : ""}</b> · de ${br(de)} a ${br(ate)} (${n} dia${n > 1 ? "s" : ""}). ` +
     `Comparação com os ${n} dia${n > 1 ? "s" : ""} anteriores: ${br(deAnt)} a ${br(ateAnt)}.`;
   const delta = (v, b) => !b ? "sem movimento no período anterior" : `${v >= b ? "▲" : "▼"} ${Math.abs((v / b - 1) * 100).toFixed(0)}% vs. período anterior (${ton(b)} t)`;
   const diasMov = new Set(ps.map(x => x.data)).size;
   $("#pKpis").innerHTML = [
-    ["Total no período", ton(kgT) + " t", delta(kgT, kgA)],
+    ps.length && ps.every(x => x.por_carrada) ? ["Total no período", ps.length + " carrada" + (ps.length > 1 ? "s" : ""), "vendido por carrada, sem peso"] : ["Total no período", ton(kgT) + " t", delta(kgT, kgA)],
     ["Carradas", ps.length, `período anterior: ${ant.length}`],
-    ["Média por dia com movimento", diasMov ? ton(kgT / diasMov) + " t" : "—", `${diasMov} dia(s) com carradas`],
-    ["Média por carrada", ps.some(x => !x.por_carrada) ? ton(kgT / ps.filter(x => !x.por_carrada).length) + " t" : "—", ps.some(x => x.por_carrada) ? "sem contar o barro" : ""],
-    ...(ps.some(x => x.por_carrada) ? [["Barro (por carrada)", ps.filter(x => x.por_carrada).length, `período anterior: ${ant.filter(x => x.por_carrada).length}`]] : []),
+    soBarro(ps) ? ["Média por dia com movimento", (ps.length / diasMov).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + (ps.length / diasMov >= 2 ? " carradas" : " carrada"), `${diasMov} dia(s) com carradas`]
+      : ["Média por dia com movimento", diasMov ? ton(kgT / diasMov) + " t" : "—", `${diasMov} dia(s) com carradas`],
+    ...(soBarro(ps) ? [] : [["Média por carrada", ps.some(x => !x.por_carrada) ? ton(kgT / ps.filter(x => !x.por_carrada).length) + " t" : "—", ps.some(x => x.por_carrada) ? "sem contar o barro" : ""]]),
+    ...(ps.some(x => x.por_carrada) && !soBarro(ps) ? [["Barro (por carrada)", ps.filter(x => x.por_carrada).length, `período anterior: ${ant.filter(x => x.por_carrada).length}`]] : []),
     ...(cliSel ? [] : [["Clientes atendidos", new Set(ps.map(x => x.cliente)).size, `período anterior: ${new Set(ant.map(x => x.cliente)).size}`]])]
     .map(([t, v, d]) => `<div class="kpi"><small>${t}</small><b>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
 
   // gráfico: por dia até 62 dias, por semana até ~6 meses, depois por mês
   const escala = n <= 62 ? "dia" : n <= 190 ? "semana" : "mês";
-  $("#pTitGraf").textContent = `Toneladas por ${escala}`;
+  // só barro (por carrada): o gráfico conta carradas em vez de toneladas
+  const soCarrada = soBarro(ps);
+  $("#pTitGraf").textContent = `${soCarrada ? "Carradas" : "Toneladas"} por ${escala}`;
   const chave = d => escala === "dia" ? d : escala === "semana" ? segundaDaSemana(d) : d.slice(0, 7);
   const grupos = [];
   for (let d = de; d <= ate; d = somaDias(d, 1)) { const k = chave(d); if (!grupos.length || grupos[grupos.length - 1].k !== k) grupos.push({ k, kg: 0, c: 0 }); }
   const idx = new Map(grupos.map((g, i) => [g.k, i]));
-  ps.forEach(x => { const g = grupos[idx.get(chave(x.data))]; if (g) { g.kg += x.liquido_kg; g.c++; } });
+  ps.forEach(x => { const g = grupos[idx.get(chave(x.data))]; if (g) { g.kg += soCarrada ? 1000 : x.liquido_kg; g.c++; } });
   const rot = g => escala === "dia" ? br(g.k).slice(0, 5) : escala === "semana" ? "sem. " + br(g.k).slice(0, 5) : g.k.slice(5) + "/" + g.k.slice(0, 4);
   const W = 640, H = 220, ml = 44, mb = 22, mt = 8, larg = (W - ml - 8) / grupos.length, max = Math.max(...grupos.map(g => g.kg), 1);
   const passo = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000].find(p => max / 1000 / p <= 5) || 10000;
@@ -1396,7 +1434,7 @@ async function carregarPainel() {
   $("#pDias").onmousemove = e => {
     const i = e.target.dataset?.i; if (i === undefined) return dica && (dica.style.display = "none");
     const g = grupos[i], caixa = $("#pDias").getBoundingClientRect();
-    dica.innerHTML = `<b>${escala === "semana" ? "Semana de " + br(g.k) : escala === "dia" ? br(g.k) : rot(g)}</b><br>${ton(g.kg)} t · ${g.c} carradas`;
+    dica.innerHTML = `<b>${escala === "semana" ? "Semana de " + br(g.k) : escala === "dia" ? br(g.k) : rot(g)}</b><br>${soCarrada ? "" : ton(g.kg) + " t · "}${g.c} carradas`;
     dica.style.display = "block"; dica.style.left = Math.min(e.clientX - caixa.left + 12, caixa.width - 170) + "px"; dica.style.top = (e.clientY - caixa.top - 40) + "px";
   };
   $("#pDias").onmouseleave = () => dica && (dica.style.display = "none");
@@ -1410,16 +1448,16 @@ async function carregarPainel() {
     `<table><tr><th>Cliente</th><th class="n">Carradas</th><th class="n">Toneladas</th><th style="width:22%"></th><th class="n">%</th><th>Retiradas</th><th class="n">Período anterior</th><th></th></tr>` +
     g.map(l => { const a = antPor.get(l.id) || 0, sel = l.id === cliSel;
       return `<tr data-pcliente="${esc(l.id)}" style="cursor:pointer${sel ? ";outline:2px solid var(--azul)" : ""}"><td>${esc(l.id)}</td><td class="n">${l.carradas}</td><td class="n"><b>${tonG(l)}</b></td><td><div class="barra" style="width:${Math.max(l.kg / maior * 100, 1)}%"></div></td><td class="n">${l.pesadas ? (l.kg / (kgTodos || 1) * 100).toFixed(1).replace(".", ",") + "%" : "—"}</td><td>${datas(l.id)}</td><td class="n">${a ? ton(a) + " t" : "—"}</td><td><button class="mini" data-ppdf="${esc(l.id)}">PDF</button></td></tr>`; }).join("") +
-    `<tr class="dia"><td>TOTAL GERAL</td><td class="n">${todos.length}</td><td class="n">${ton(kgTodos)}</td><td></td><td class="n">100%</td><td></td><td class="n">${ton(todosAnt.reduce((s, x) => s + x.liquido_kg, 0))} t</td><td></td></tr></table>`;
+    `<tr class="dia"><td>TOTAL GERAL</td><td class="n">${todos.length}</td><td class="n">${tonTot(todos, kgTodos)}</td><td></td><td class="n">${soBarro(todos) ? "—" : "100%"}</td><td></td><td class="n">${soBarro(todos) ? "—" : ton(todosAnt.reduce((s, x) => s + x.liquido_kg, 0)) + " t"}</td><td></td></tr></table>`;
   const gp = agrupar(ps, x => ({ id: x.produto || x.produto_balanca, v: [] })).sort((p, q) => q.kg - p.kg);
   $("#pProdutos").innerHTML = !gp.length ? '<div class="vazio">—</div>' :
     `<table><tr><th>Produto</th><th class="n">Carradas</th><th class="n">Toneladas</th><th class="n">%</th></tr>` +
-    gp.map(l => `<tr><td>${esc(l.id)}</td><td class="n">${l.carradas}</td><td class="n">${tonG(l)}</td><td class="n">${l.pesadas ? (l.kg / (kgT || 1) * 100).toFixed(1).replace(".", ",") + "%" : "—"}</td></tr>`).join("") +
-    `<tr class="dia"><td>TOTAL</td><td class="n">${ps.length}</td><td class="n">${ton(kgT)}</td><td class="n">100%</td></tr></table>`;
+    gp.map(l => `<tr data-pproduto="${esc(l.id)}" style="cursor:pointer${l.id === prodSel ? ";outline:2px solid var(--azul)" : ""}"><td>${esc(l.id)}</td><td class="n">${l.carradas}</td><td class="n">${tonG(l)}</td><td class="n">${l.pesadas ? (l.kg / (kgT || 1) * 100).toFixed(1).replace(".", ",") + "%" : "—"}</td></tr>`).join("") +
+    `<tr class="dia"><td>TOTAL</td><td class="n">${ps.length}</td><td class="n">${tonTot(ps, kgT)}</td><td class="n">${soBarro(ps) ? "—" : "100%"}</td></tr></table>`;
 
   // atenção
   const al = [], hoje = iso(new Date()), fimContagem = ate < hoje ? somaDias(ate, 1) : hoje;
-  const comMov = new Set(todos.map(x => x.data)), semRel = [];
+  const semRel = [];
   for (let d = de > primeiraData ? de : primeiraData; d < fimContagem; d = somaDias(d, 1))
     if (new Date(d + "T12:00:00").getDay() !== 0 && !comMov.has(d)) semRel.push(br(d).slice(0, 5));
   if (semRel.length && papel !== "diesel") al.push(`<b>${semRel.length} dia(s) de segunda a sábado sem relatório anexado:</b> ${semRel.slice(0, 20).join(", ")}${semRel.length > 20 ? "…" : ""}. Se teve expedição, falta anexar.`);
@@ -1441,6 +1479,11 @@ $("#btPainel").addEventListener("click", carregarPainel);
 $("#btPainelPdf").addEventListener("click", () => extratoPainel($("#pCliente").value));
 $("#pAtalho").addEventListener("change", e => { if (e.target.value) { aplicarAtalhoPainel(e.target.value); carregarPainel(); } });
 $("#pCliente").addEventListener("change", carregarPainel);
+$("#pProduto").addEventListener("change", carregarPainel);
+$("#pProdutos").addEventListener("click", e => {
+  const tr = e.target.closest("[data-pproduto]"); if (!tr) return;
+  $("#pProduto").value = $("#pProduto").value === tr.dataset.pproduto ? "" : tr.dataset.pproduto; carregarPainel();
+});
 for (const id of ["#pDe", "#pAte"]) $(id).addEventListener("change", () => { $("#pAtalho").value = ""; carregarPainel(); });
 $("#pClientes").addEventListener("click", e => {
   if (e.target.dataset.ppdf) return extratoPainel(e.target.dataset.ppdf);
@@ -2122,7 +2165,6 @@ $("#btNota").addEventListener("click", async () => {
 
 // ------------------------------------------------------------------ extrato por fornecedor (diesel pago depois)
 // nome sem acento, maiúscula ou espaço sobrando, para achar "posto x" ao pesquisar "Posto X"
-const normNome = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 function nomesFornecedores(soAtivos) {
   const cad = (dz.fornecedores || []).filter(f => !soAtivos || f.ativo).map(f => f.nome);
   const usados = dz.cargas.filter(c => c.situacao !== "cancelada").map(c => c.fornecedor).filter(n => !cad.some(x => normNome(x) === normNome(n)));
