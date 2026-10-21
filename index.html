@@ -1142,7 +1142,7 @@ $("#btComprovante").addEventListener("click", async () => {
   const { data: cls } = await db.from("clientes").select("nome,nome_balanca,cpf_cnpj");
   const doc = new jspdf.jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const clientes = [...new Set(validas.map(p => p.cliente))].sort();
-  clientes.forEach((c, i) => { if (i) doc.addPage(); paginaComprovante(doc, validas.filter(p => p.cliente === c), (cls || []).find(x => x.nome === c)); });
+  clientes.forEach((c, i) => { if (i) doc.addPage(); paginaComprovante(doc, validas.filter(p => p.cliente === c), cadPorNome(cls, c)); });
   const de = $("#fDe").value, ate = $("#fAte").value;
   const sufixo = clientes.length === 1 ? "_" + clientes[0].replace(/[^\w]+/g, "") : "_todos_clientes";
   doc.save(nomeComprovante(de, ate, sufixo));
@@ -1219,6 +1219,8 @@ function paginaComprovante(doc, ps, cad, periodo) {
 // ------------------------------------------------------------------ envio semanal ao cliente (administrador)
 let envio = [];
 const SITUACAO = { enviado: "enviado", de_acordo: "de acordo", contestado: "contestou" };
+// cadastro do cliente pelo nome completo; com dois nomes de balança, prefere o que tem CPF/CNPJ
+const cadPorNome = (cls, nome) => { const cs = (cls || []).filter(x => x.nome === nome); return cs.find(x => x.cpf_cnpj) || cs[0]; };
 function foneWhats(t) {
   let n = String(t || "").replace(/\D/g, "").replace(/^0+/, "");
   if (n.length === 10 || n.length === 11) n = "55" + n;
@@ -1232,9 +1234,11 @@ async function carregarEnvio() {
       db.from("clientes").select("id,nome,nome_balanca,cpf_cnpj,telefone"),
       db.from("comprovante_envios").select("*").eq("de", de).eq("ate", ate).order("registrado_em")]);
     if (e1 || e2) throw e1 || e2;
-    envio = [...new Set(ps.map(p => p.cliente_id))].map(id => {
-      const pc = ps.filter(p => p.cliente_id === id), cad = (cls || []).find(c => c.id === id);
-      const ev = (evs || []).filter(e => e.cliente_id === id);
+    // agrupa pelo nome completo: dois nomes da balança com o mesmo nome completo (ex.: ROMERO e 2R) viram um cliente só
+    envio = [...new Set(ps.map(p => p.cliente))].map(nome => {
+      const pc = ps.filter(p => p.cliente === nome), ids = new Set(pc.map(p => p.cliente_id));
+      const cads = (cls || []).filter(c => ids.has(c.id)), cad = cads.find(c => foneWhats(c.telefone)) || cads[0], id = cad?.id ?? pc[0].cliente_id;
+      const ev = (evs || []).filter(e => ids.has(e.cliente_id));
       return { id, cad, ps: pc, cliente: pc[0].cliente, kg: pc.reduce((s, p) => s + p.liquido_kg, 0), ev, ultimo: ev[ev.length - 1],
                enviado: [...ev].reverse().find(e => e.tipo === "enviado") };
     }).sort((a, b) => a.cliente.localeCompare(b.cliente));
@@ -1383,7 +1387,7 @@ async function extratoPainel(cliente) {
   const { data: cls } = await db.from("clientes").select("nome,nome_balanca,cpf_cnpj");
   const doc = new jspdf.jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const clientes = [...new Set(ps.map(p => p.cliente))].sort();
-  clientes.forEach((c, i) => { if (i) doc.addPage(); paginaComprovante(doc, ps.filter(p => p.cliente === c), (cls || []).find(x => x.nome === c), { de, ate }); });
+  clientes.forEach((c, i) => { if (i) doc.addPage(); paginaComprovante(doc, ps.filter(p => p.cliente === c), cadPorNome(cls, c), { de, ate }); });
   doc.save(nomeComprovante(de, ate, clientes.length === 1 ? "_" + clientes[0].replace(/[^\w]+/g, "") : "_todos_clientes"));
   msg("#pMsg", "ok", `Extrato de ${br(de)} a ${br(ate)} gerado: ${clientes.length === 1 ? esc(clientes[0]) : clientes.length + " clientes, uma página para cada"}.`);
 }
