@@ -405,17 +405,39 @@
           <p style="color:var(--suave);font-size:13px">O código da carga (DIE-ano-mês-número) é criado pelo sistema. Se a última carga fechou com sobra medida, a sobra entra sozinha como saldo desta.</p>
           <button class="bt" id="btCarga">Abrir carga</button>
         </details>
-        <details id="dnBox" data-admin><summary><b>Lançar nota / valor de carga paga depois</b></summary>
+        <details id="dnBox" data-admin><summary><b>Lançar valor de carga paga depois</b></summary>
           <div class="linha">
             <label>Carga <select id="dnCarga"></select></label>
-            <label>Valor total da nota (R$) <input type="number" step="0.01" min="0" inputmode="decimal" id="dnValor"></label>
-            <label>Nota fiscal (foto ou PDF) <input type="file" id="dnNota" accept="image/*,application/pdf"></label>
+            <label>Valor pago (R$) <input type="number" step="0.01" min="0" inputmode="decimal" id="dnValor"></label>
+            <label>Nota ou comprovante de pagamento (opcional) <input type="file" id="dnNota" accept="image/*,application/pdf"></label>
           </div>
-          <p style="color:var(--suave);font-size:13px">Use quando o diesel foi retirado só com o recibo e a nota chegou depois. Vale também para carga já fechada; o custo dos abastecimentos dela passa a aparecer no painel.</p>
-          <button class="bt" id="btNota">Salvar nota</button>
+          <p style="color:var(--suave);font-size:13px">Use quando o diesel foi retirado só com o recibo e o valor foi acertado depois. Vale também para carga já fechada; o custo dos abastecimentos dela passa a aparecer no painel.</p>
+          <button class="bt" id="btNota">Salvar valor</button>
         </details>
         <div id="dcMsg"></div>
         <div class="tabela" id="tabCargas"></div>
+      </div>
+      <div class="card" data-parte="cargas">
+        <h3 style="margin-top:0">Extrato por fornecedor</h3>
+        <p style="margin-top:0;color:var(--suave);font-size:13px">Para o fornecedor que entrega o diesel e recebe depois: todas as retiradas do período, com o recibo de cada uma e os litros que foram para cada máquina. Serve para conferir a conta do fornecedor e prestar contas.</p>
+        <div class="linha">
+          <label>Fornecedor <select id="dxForn"></select></label>
+          <label>De <input type="date" id="dxDe"></label>
+          <label>Até <input type="date" id="dxAte"></label>
+          <button class="bt sec" id="btExtratoForn">Extrato do fornecedor (PDF)</button>
+        </div>
+        <div id="dxResumo"></div>
+        <div class="tabela" id="dxCargas"></div>
+        <div class="tabela" id="dxMaquinas" style="margin-top:10px"></div>
+        <details id="dxPagar" data-admin style="margin-top:12px"><summary><b>Lançar o pagamento deste período</b></summary>
+          <div class="linha">
+            <label>Valor total pago ao fornecedor (R$) <input type="number" step="0.01" min="0" inputmode="decimal" id="dxValor"></label>
+            <label>Comprovante de pagamento ou nota (opcional) <input type="file" id="dxArq" accept="image/*,application/pdf"></label>
+          </div>
+          <p id="dxPagarInfo" style="color:var(--suave);font-size:13px"></p>
+          <button class="bt" id="btPagarForn">Salvar pagamento</button>
+        </details>
+        <div id="dxMsg"></div>
       </div>
       <div class="card" data-parte="consumo abastecer">
         <h3 style="margin-top:0">Abastecimentos</h3>
@@ -1606,7 +1628,7 @@ async function carregarDiesel() {
   $("#dfCarga").innerHTML = '<option value="">Todas</option>' + dz.cargas.filter(c => c.situacao !== "cancelada").slice().reverse().map(c => `<option value="${c.id}">${esc(c.codigo)}</option>`).join("");
   $("#dfCarga").value = fCarga;
   infoMaquina();
-  mostrarPendenciasDiesel(); mostrarCargas(); mostrarAbastecimentos(); mostrarMaquinas(); mostrarPainelDiesel();
+  mostrarPendenciasDiesel(); mostrarCargas(); mostrarExtratoForn(); mostrarAbastecimentos(); mostrarMaquinas(); mostrarPainelDiesel();
 }
 
 function infoMaquina() {
@@ -1631,7 +1653,7 @@ function mostrarPendenciasDiesel() {
   }
   if (papel === "admin") {
     const sem = dz.cargas.filter(c => c.situacao !== "cancelada" && c.valor_total == null);
-    if (sem.length) al.push(`${sem.length === 1 ? "A carga" : "As cargas"} <b>${sem.map(c => esc(c.codigo)).join(", ")}</b> (${lit(sem.reduce((t, c) => t + Number(c.litros), 0))} L) ${sem.length === 1 ? "está" : "estão"} sem valor. O custo desses litros fica fora do painel até lançar a nota em Cargas de diesel.`);
+    if (sem.length) al.push(`${sem.length === 1 ? "A carga" : "As cargas"} <b>${sem.map(c => esc(c.codigo)).join(", ")}</b> (${lit(sem.reduce((t, c) => t + Number(c.litros), 0))} L) ${sem.length === 1 ? "está" : "estão"} sem valor. O custo desses litros fica fora do painel até lançar o valor em Cargas de diesel.`);
   }
   const limite = Date.now() - 30 * 86400000;
   for (const a of dz.abs.filter(a => a.desvio != null && Math.abs(a.desvio) > 0.3 && new Date(a.abastecido_em) > limite)) {
@@ -1655,7 +1677,7 @@ function mostrarCargas() {
         : `fechada, sobra ${lit(c.sobra_l)} L` + (Math.abs(s.diferenca) > 0.5 ? ` <span class="alerta">(diferença ${lit(s.diferenca)} L)</span>` : " ✓");
       const bts = [c.comprovante_caminho ? `<button class="mini" data-dfoto="${esc(c.comprovante_caminho)}">Ver recibo</button>` : '<span class="alerta">sem recibo</span>',
         c.nota_caminho ? `<button class="mini" data-dfoto="${esc(c.nota_caminho)}">Ver nota</button>` : "",
-        papel === "admin" && (c.valor_total == null || !c.nota_caminho) ? `<button class="mini" data-dnota="${c.id}">Lançar nota</button>` : "",
+        papel === "admin" && c.valor_total == null ? `<button class="mini" data-dnota="${c.id}">Lançar valor</button>` : "",
         c.situacao === "aberta" ? `<button class="mini" data-dfechar="${c.id}">Fechar carga</button>` : "",
         `<button class="mini" data-dcancelar-carga="${c.id}" data-codigo="${esc(c.codigo)}">Cancelar</button>`].join(" ");
       return `<tr><td><b>${esc(c.codigo)}</b></td><td>${dataHora(c.retirado_em)}</td><td>${esc(c.fornecedor)}</td><td class="n">${lit(c.litros)}</td><td class="n">${Number(c.saldo_anterior_l) ? lit(c.saldo_anterior_l) : "—"}</td><td class="n">${lit(s.usado)}</td><td class="n"><b>${lit(s.restante)}</b></td><td class="n">${c.valor_total == null ? '<span class="alerta">a lançar</span>' : real(c.valor_total)}</td><td class="n">${s.precoL ? s.precoL.toFixed(2).replace(".", ",") : "—"}</td><td>${sit}</td><td>${bts}</td></tr>`;
@@ -1727,7 +1749,7 @@ async function mostrarPainelDiesel() {
   const delta = (v, b, fmt, menorMelhor) => !b ? "sem dado no período anterior" : Math.abs(pct(v, b)) < 0.5 ? `igual ao anterior (${fmt(b)})` : `${v >= b ? "▲" : "▼"} ${Math.abs(pct(v, b)).toFixed(0)}% vs. anterior (${fmt(b)})` + (menorMelhor && v < b ? " · melhorou" : "");
   const kpis = [
     ["Diesel abastecido", lit(r.litros) + " L", delta(r.litros, rA.litros, v => lit(v) + " L")],
-    ["Custo do diesel", real(r.custo), r.semValor ? `${lit(r.semValor)} L ainda sem valor (nota a lançar)` : delta(r.custo, rA.custo, real)],
+    ["Custo do diesel", real(r.custo), r.semValor ? `${lit(r.semValor)} L ainda sem valor (a lançar)` : delta(r.custo, rA.custo, real)],
     ["Horas trabalhadas", r.horas ? lit(r.horas) + " h" : "—", delta(r.horas, rA.horas, v => lit(v) + " h")],
     ["Consumo médio", r.lh ? lit(r.lh) + " L/h" : "—", r.lh && rA.lh ? delta(r.lh, rA.lh, v => lit(v) + " L/h", true) : r.lh ? "sem dado no período anterior" : "precisa de 2 abastecimentos da máquina"],
     ["Custo por hora", r.horas ? real(r.custo / r.horas) : "—", r.horas && rA.horas ? delta(r.custo / r.horas, rA.custo / rA.horas, real, true) : ""],
@@ -1816,7 +1838,7 @@ async function mostrarPainelDiesel() {
       (ex && ex.reais > 0 ? `. Comparado ao período anterior, consumiu cerca de <b>${real(ex.reais)} a mais</b> pelo aumento do L/h.` : "."));
   }
   if (categorias.length > 1 && categorias[0].r.custo > 0) vilas.push(`Categoria que mais gastou: <b>${esc(categorias[0].tipo)}</b>, ${real(categorias[0].r.custo)} (${(categorias[0].r.custo / custoTot * 100).toFixed(0)}% do total).`);
-  if (r.semValor) vilas.unshift(`<b>${lit(r.semValor)} L</b> do período vieram de cargas ainda sem valor. Os valores em R$ estão incompletos até lançar a nota.`);
+  if (r.semValor) vilas.unshift(`<b>${lit(r.semValor)} L</b> do período vieram de cargas ainda sem valor. Os valores em R$ estão incompletos até lançar o valor.`);
   $("#dpVila").innerHTML = vilas.map(v => `<div class="msg aviso">${v}</div>`).join("");
   $("#dpCategorias").innerHTML = !categorias.length ? '<div class="vazio">Nenhum abastecimento no período. Preencha o tipo de cada máquina em Máquinas.</div>' :
     `<table><tr><th>Categoria</th><th class="n">Máquinas</th><th class="n">Litros</th><th class="n">Trabalhou</th><th class="n">Consumo</th><th class="n">Período anterior</th><th class="n">Custo</th><th class="n">% do custo</th><th class="n">Custo por hora</th></tr>` +
@@ -2023,9 +2045,118 @@ $("#btNota").addEventListener("click", async () => {
     for (const x of ["#dnValor", "#dnNota"]) $(x).value = "";
     $("#dnBox").open = false;
     await carregarDiesel();
-    msg("#dcMsg", "ok", `Nota da carga <b>${esc(c?.codigo)}</b> salva.` + (valor != null ? ` Valor ${real(valor)} (R$ ${(valor / Number(c?.litros)).toFixed(2).replace(".", ",")} por litro); o custo dos abastecimentos dela já aparece no painel.` : ""));
+    msg("#dcMsg", "ok", `Valor da carga <b>${esc(c?.codigo)}</b> salvo.` + (valor != null ? ` Valor ${real(valor)} (R$ ${(valor / Number(c?.litros)).toFixed(2).replace(".", ",")} por litro); o custo dos abastecimentos dela já aparece no painel.` : ""));
   } catch (e) { msg("#dcMsg", "erro", "Não foi salva. " + erroTxt(e)); }
   $("#btNota").disabled = false;
+});
+
+// ------------------------------------------------------------------ extrato por fornecedor (diesel pago depois)
+function extratoForn() {
+  const forn = $("#dxForn").value, de = $("#dxDe").value, ate = $("#dxAte").value;
+  const cargas = dz.cargas.filter(c => c.situacao !== "cancelada" && c.fornecedor === forn && dataBR(c.retirado_em) >= de && dataBR(c.retirado_em) <= ate)
+    .sort((x, y) => x.retirado_em < y.retirado_em ? -1 : 1);
+  const ids = new Set(cargas.map(c => c.id)), abs = dz.abs.filter(a => a.situacao === "valida" && ids.has(a.carga_id));
+  const porMaq = new Map();
+  for (const a of abs) { const x = porMaq.get(a.maquina_id) || { litros: 0, n: 0 }; x.litros += Number(a.litros); x.n++; porMaq.set(a.maquina_id, x); }
+  const maquinas = [...porMaq].map(([id, x]) => ({ nome: dz.maquinas.find(m => m.id === id)?.nome || "?", ...x })).sort((a, b) => b.litros - a.litros);
+  const litros = cargas.reduce((t, c) => t + Number(c.litros), 0), semValor = cargas.filter(c => c.valor_total == null);
+  return { forn, de, ate, cargas, maquinas, litros, abastecido: abs.reduce((t, a) => t + Number(a.litros), 0),
+           semValor, litrosSemValor: semValor.reduce((t, c) => t + Number(c.litros), 0), valor: cargas.reduce((t, c) => t + (c.valor_total == null ? 0 : Number(c.valor_total)), 0) };
+}
+function mostrarExtratoForn() {
+  const fs = [...new Set(dz.cargas.filter(c => c.situacao !== "cancelada").map(c => c.fornecedor))].sort();
+  const atual = $("#dxForn").value || fs.find(f => dz.cargas.some(c => c.fornecedor === f && c.valor_total == null && c.situacao !== "cancelada")) || fs[0] || "";
+  $("#dxForn").innerHTML = fs.map(f => `<option ${f === atual ? "selected" : ""}>${esc(f)}</option>`).join("");
+  if (!$("#dxDe").value) { const h = new Date(); $("#dxDe").value = iso(new Date(h.getFullYear(), h.getMonth(), 1)); $("#dxAte").value = iso(h); }
+  const X = extratoForn();
+  if (!X.forn || !X.cargas.length) { $("#dxResumo").innerHTML = '<div class="vazio">Nenhuma retirada deste fornecedor no período.</div>'; $("#dxCargas").innerHTML = $("#dxMaquinas").innerHTML = ""; $("#dxPagarInfo").textContent = ""; return; }
+  $("#dxResumo").innerHTML = `<p><b>${esc(X.forn)}</b> · ${br(X.de)} a ${br(X.ate)}: <b>${X.cargas.length} retirada(s), ${lit(X.litros)} L</b>` +
+    (X.semValor.length ? ` · <span class="alerta">${lit(X.litrosSemValor)} L a pagar (sem valor lançado)</span>` : " · tudo com valor lançado") +
+    (X.valor ? ` · valor lançado ${real(X.valor)}` : "") + `</p>`;
+  $("#dxCargas").innerHTML = `<table><tr><th>Retirada</th><th>Código</th><th class="n">Litros</th><th>Recibo</th><th class="n">Valor</th><th class="n">R$/L</th><th>Situação</th></tr>` +
+    X.cargas.map(c => `<tr><td>${dataHora(c.retirado_em)}</td><td><b>${esc(c.codigo)}</b></td><td class="n">${lit(c.litros)}</td>` +
+      `<td>${c.comprovante_caminho ? `<button class="mini" data-dfoto="${esc(c.comprovante_caminho)}">Ver recibo</button>` : '<span class="alerta">sem recibo</span>'}` +
+      `${c.nota_caminho ? ` <button class="mini" data-dfoto="${esc(c.nota_caminho)}">Comprovante</button>` : ""}</td>` +
+      `<td class="n">${c.valor_total == null ? '<span class="alerta">a pagar</span>' : real(c.valor_total)}</td><td class="n">${c.valor_total == null ? "—" : (c.valor_total / c.litros).toFixed(2).replace(".", ",")}</td><td>${c.situacao}</td></tr>`).join("") +
+    `<tr class="dia"><td>TOTAL</td><td></td><td class="n">${lit(X.litros)}</td><td></td><td class="n">${X.valor ? real(X.valor) : ""}</td><td></td><td></td></tr></table>`;
+  $("#dxMaquinas").innerHTML = !X.maquinas.length ? "" : `<table><tr><th>Para onde foi o diesel</th><th class="n">Abastecimentos</th><th class="n">Litros</th></tr>` +
+    X.maquinas.map(m => `<tr><td>${esc(m.nome)}</td><td class="n">${m.n}</td><td class="n">${lit(m.litros)}</td></tr>`).join("") +
+    `<tr class="dia"><td>TOTAL abastecido</td><td></td><td class="n">${lit(X.abastecido)}</td></tr></table>`;
+  $("#dxPagarInfo").innerHTML = X.semValor.length
+    ? `O valor é dividido entre as ${X.semValor.length} retirada(s) sem valor (${lit(X.litrosSemValor)} L), pelo mesmo preço por litro. As retiradas que já têm valor não mudam.`
+    : "Todas as retiradas deste período já têm valor lançado.";
+}
+for (const id of ["#dxForn", "#dxDe", "#dxAte"]) $(id).addEventListener("change", mostrarExtratoForn);
+$("#dxValor").addEventListener("input", () => {
+  const X = extratoForn(), v = numero($("#dxValor").value);
+  if (X.litrosSemValor && v > 0) $("#dxPagarInfo").innerHTML = `${real(v)} ÷ ${lit(X.litrosSemValor)} L = <b>R$ ${(v / X.litrosSemValor).toFixed(4).replace(".", ",")} por litro</b>, dividido entre ${X.semValor.length} retirada(s).`;
+});
+
+$("#btPagarForn").addEventListener("click", async () => {
+  const X = extratoForn(), v = numero($("#dxValor").value), f = $("#dxArq").files[0];
+  if (!X.semValor.length) return msg("#dxMsg", "erro", "Não há retirada sem valor neste período.");
+  if (!v || isNaN(v) || v <= 0) return msg("#dxMsg", "erro", "Informe o valor total pago.");
+  const precoL = v / X.litrosSemValor;
+  if (!confirm(`Lançar ${real(v)} para ${X.semValor.length} retirada(s) de ${X.forn} (${lit(X.litrosSemValor)} L)?\nPreço: R$ ${precoL.toFixed(4).replace(".", ",")} por litro.`)) return;
+  $("#btPagarForn").disabled = true; msg("#dxMsg", "ok", "Salvando…");
+  try {
+    const arq = await enviarFotoDiesel("notas", f);
+    // divide em centavos pelo litro; a diferença de arredondamento fica na última retirada
+    let resto = Math.round(v * 100);
+    for (const [i, c] of X.semValor.entries()) {
+      const cent = i === X.semValor.length - 1 ? resto : Math.round(precoL * Number(c.litros) * 100);
+      resto -= cent;
+      const { error } = await db.rpc("lancar_nota_diesel", { p_id: c.id, p_valor: cent / 100, p_nota: arq });
+      if (error) throw /not find|does not exist|schema cache/i.test(error.message) ? new Error("Falta rodar a query 012 no Supabase.") : error;
+    }
+    for (const id of ["#dxValor", "#dxArq"]) $(id).value = "";
+    $("#dxPagar").open = false;
+    await carregarDiesel();
+    msg("#dxMsg", "ok", `Pagamento de ${real(v)} lançado em ${X.semValor.length} retirada(s) de ${esc(X.forn)}. O custo por máquina já aparece no Painel do diesel.`);
+  } catch (e) { msg("#dxMsg", "erro", "Não foi salvo. " + erroTxt(e) + " Confira a lista: as retiradas que já ficaram com valor não precisam ser lançadas de novo."); await carregarDiesel(); }
+  $("#btPagarForn").disabled = false;
+});
+
+$("#btExtratoForn").addEventListener("click", () => {
+  const X = extratoForn(); if (!X.cargas.length) return msg("#dxMsg", "erro", "Nenhuma retirada deste fornecedor no período.");
+  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
+  const azul = [31, 58, 95], W = 210, M = 12, num = `FOR-${X.de.replace(/-/g, "")}-${X.ate.replace(/-/g, "")}`;
+  doc.addImage(LOGO, "PNG", M, 7, 42, 12);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(...azul); doc.text(EMPRESA, M + 46, 12);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(110); doc.text(ENDERECO, M + 46, 17);
+  doc.setFontSize(6.5); doc.text("DOCUMENTO", W - M, 25, { align: "right" });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(0); doc.text(num, W - M, 29, { align: "right" });
+  doc.setDrawColor(...azul); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21);
+  doc.setFontSize(13); doc.text("Extrato de retiradas de diesel", M, 29);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
+  doc.text(`Fornecedor: ${X.forn}`, M, 35); doc.text(`Período: ${br(X.de)} a ${br(X.ate)}`, M, 40);
+  const caixas = [["RETIRADAS", String(X.cargas.length)], ["LITROS RETIRADOS", lit(X.litros) + " L"], ["A PAGAR (SEM VALOR)", lit(X.litrosSemValor) + " L"], ["VALOR LANÇADO", X.valor ? real(X.valor) : "—"]];
+  const larg = (W - 2 * M) / caixas.length;
+  caixas.forEach(([t, v], i) => { const x = M + i * larg;
+    doc.setDrawColor(170); doc.setLineWidth(0.2); doc.rect(x, 44, larg, 14);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(110); doc.text(t, x + 2.5, 48.5);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...azul); doc.text(v, x + 2.5, 55); });
+  const rodape = () => { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(130);
+    doc.text(`${num} · emitido em ${new Date().toLocaleString("pt-BR")}`, M, 289);
+    doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 289, { align: "right" }); };
+  const estilo = { margin: { left: M, right: M, bottom: 14 }, styles: { fontSize: 8, cellPadding: 1.8 }, headStyles: { fillColor: azul, textColor: 255 },
+    footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" }, alternateRowStyles: { fillColor: [244, 245, 247] }, didDrawPage: rodape };
+  doc.autoTable({ ...estilo, startY: 63, head: [["Retirada", "Código", "Litros", "Recibo", "Valor", "R$/L"]],
+    body: X.cargas.map(c => [dataHora(c.retirado_em), c.codigo, lit(c.litros), c.comprovante_caminho ? "anexado" : "sem recibo", c.valor_total == null ? "a pagar" : real(c.valor_total), c.valor_total == null ? "—" : (c.valor_total / c.litros).toFixed(2).replace(".", ",")]),
+    foot: [["TOTAL", "", lit(X.litros), "", X.valor ? real(X.valor) : "", ""]],
+    columnStyles: { 2: { halign: "right", fontStyle: "bold" }, 4: { halign: "right" }, 5: { halign: "right" } } });
+  if (X.maquinas.length) {
+    let y = doc.lastAutoTable.finalY + 8; if (y > 250) { doc.addPage(); y = 18; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text("Para onde foi o diesel", M, y);
+    doc.autoTable({ ...estilo, startY: y + 3, head: [["Máquina", "Abastecimentos", "Litros"]], body: X.maquinas.map(m => [m.nome, m.n, lit(m.litros)]),
+      foot: [["TOTAL abastecido", "", lit(X.abastecido)]], columnStyles: { 1: { halign: "right" }, 2: { halign: "right", fontStyle: "bold" } } });
+  }
+  let y = doc.lastAutoTable.finalY + 8; if (y > 255) { doc.addPage(); y = 20; }
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(90);
+  doc.text(doc.splitTextToSize("Os litros de cada retirada foram lançados no sistema no momento da retirada, com a foto do recibo assinado. Os recibos ficam guardados no sistema e podem ser apresentados a qualquer momento.", W - 2 * M), M, y);
+  doc.setDrawColor(120); doc.line(M, y + 26, M + 75, y + 26); doc.line(W - M - 75, y + 26, W - M, y + 26);
+  doc.text("Geolux", M, y + 30); doc.text(X.forn, W - M - 75, y + 30);
+  doc.save(`Geolux_extrato_diesel_${X.forn.replace(/[^\w]+/g, "_")}_${X.de}_a_${X.ate}.pdf`);
 });
 
 $("#btMaquina").addEventListener("click", async () => {
