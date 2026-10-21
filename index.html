@@ -135,6 +135,7 @@
       <button data-aba="diesel" data-parte="cargas">Cargas de diesel</button>
       <button data-aba="diesel" data-parte="consumo">Histórico de abastecimentos</button>
       <button data-aba="diesel" data-parte="maquinas">Máquinas</button>
+      <button data-aba="diesel" data-parte="fornecedores">Fornecedores</button>
     </div>
     <div class="grupo" data-grupo="sistema" data-admin>
       <h4>Sistema</h4>
@@ -421,7 +422,8 @@
         <h3 style="margin-top:0">Extrato por fornecedor</h3>
         <p style="margin-top:0;color:var(--suave);font-size:13px">Para o fornecedor que entrega o diesel e recebe depois: todas as retiradas do período, com o recibo de cada uma e os litros que foram para cada máquina. Serve para conferir a conta do fornecedor e prestar contas.</p>
         <div class="linha">
-          <label>Fornecedor <select id="dxForn"></select></label>
+          <label>Fornecedor <input id="dxForn" list="dxFornLista" placeholder="digite o nome"></label><datalist id="dxFornLista"></datalist>
+          <label>Período <select id="dxAtalho"><option value="mes">Este mês</option><option value="mesant">Mês passado</option><option value="90">Últimos 90 dias</option><option value="ano">Este ano</option><option value="tudo">Todo o histórico</option><option value="">Escolher datas</option></select></label>
           <label>De <input type="date" id="dxDe"></label>
           <label>Até <input type="date" id="dxAte"></label>
           <button class="bt sec" id="btExtratoForn">Extrato do fornecedor (PDF)</button>
@@ -455,6 +457,20 @@
         </div>
         <div id="dmMsg"></div>
         <div class="tabela" id="tabMaquinas" style="margin-top:12px"></div>
+      </div>
+      <div class="card" data-parte="fornecedores">
+        <h3 style="margin-top:0">Fornecedores de diesel</h3>
+        <div class="linha">
+          <label>Nome <input id="dfoNome" placeholder="Posto Acarape"></label>
+          <label>CNPJ ou CPF <input id="dfoDoc" inputmode="numeric"></label>
+          <label>Telefone <input id="dfoTel" inputmode="tel"></label>
+          <label>Observação <input id="dfoObs"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="dfoPrazo"> Retiramos e pagamos depois (a prazo)</label>
+        <button class="bt" id="btFornecedor">Cadastrar fornecedor</button>
+        <div id="dfoMsg"></div>
+        <div class="linha" style="margin-top:12px"><label>Pesquisar <input id="dfoBusca" placeholder="nome do fornecedor"></label></div>
+        <div class="tabela" id="tabFornecedores"></div>
       </div>
     </section>
     <section id="aba-fechamento" class="escondido">
@@ -1423,7 +1439,7 @@ $("#pClientes").addEventListener("click", e => {
 $("#btBackup").addEventListener("click", async () => {
   msg("#backupMsg", "aviso", "Gerando backup…");
   try {
-    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "auditoria"];
+    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "auditoria"];
     const dados = {};
     for (const t of tabelas) {
       dados[t] = [];
@@ -1596,11 +1612,13 @@ async function carregarDiesel() {
   try {
     if (!navigator.onLine) throw new Error("Failed to fetch");
     const [cargas, abs, maquinas] = await Promise.all([todasLinhas("diesel_cargas", "retirado_em"), todasLinhas("diesel_abastecimentos", "abastecido_em"), todasLinhas("maquinas", "nome")]);
-    dz = { cargas, abs, maquinas };
+    // cadastro de fornecedores existe a partir da query 013
+    const forns = await todasLinhas("diesel_fornecedores", "nome").catch(() => null);
+    dz = { cargas, abs, maquinas, fornecedores: forns };
     salvarJson(CACHE_DZ, { ...dz, em: new Date().toISOString() });
   } catch (e) {
     const guardado = lerJson(CACHE_DZ, null);
-    if (semRede(e) && guardado) { dz = { cargas: guardado.cargas, abs: guardado.abs, maquinas: guardado.maquinas }; dzOffline = guardado.em; }
+    if (semRede(e) && guardado) { dz = { cargas: guardado.cargas, abs: guardado.abs, maquinas: guardado.maquinas, fornecedores: guardado.fornecedores || null }; dzOffline = guardado.em; }
     else {
       const falta = /does not exist|schema cache/i.test(e.message || "");
       return msg("#dFila", "erro", falta ? "O controle de diesel ainda não foi ligado no banco. Rode a query 009 no Supabase."
@@ -1621,14 +1639,14 @@ async function carregarDiesel() {
   $("#daMaquina").innerHTML = '<option value="">— escolher —</option>' + ativas.map(m => `<option value="${m.id}">${esc(m.nome)}</option>`).join("");
   if (ativas.some(m => String(m.id) === selMaq)) $("#daMaquina").value = selMaq;
   $("#daOperadores").innerHTML = [...new Set(dz.abs.map(a => a.operador).filter(Boolean))].map(o => `<option>${esc(o)}</option>`).join("");
-  $("#dcFornecedores").innerHTML = [...new Set(dz.cargas.map(c => c.fornecedor))].map(o => `<option>${esc(o)}</option>`).join("");
+  $("#dcFornecedores").innerHTML = nomesFornecedores(true).map(o => `<option>${esc(o)}</option>`).join("");
   const fMaq = $("#dfMaquina").value, fCarga = $("#dfCarga").value;
   $("#dfMaquina").innerHTML = '<option value="">Todas</option>' + dz.maquinas.map(m => `<option value="${m.id}">${esc(m.nome)}</option>`).join("");
   $("#dfMaquina").value = fMaq;
   $("#dfCarga").innerHTML = '<option value="">Todas</option>' + dz.cargas.filter(c => c.situacao !== "cancelada").slice().reverse().map(c => `<option value="${c.id}">${esc(c.codigo)}</option>`).join("");
   $("#dfCarga").value = fCarga;
   infoMaquina();
-  mostrarPendenciasDiesel(); mostrarCargas(); mostrarExtratoForn(); mostrarAbastecimentos(); mostrarMaquinas(); mostrarPainelDiesel();
+  mostrarPendenciasDiesel(); mostrarCargas(); mostrarExtratoForn(); mostrarAbastecimentos(); mostrarMaquinas(); mostrarFornecedores(); mostrarPainelDiesel();
 }
 
 function infoMaquina() {
@@ -1705,6 +1723,33 @@ function mostrarMaquinas() {
     dz.maquinas.map(m => `<tr><td><b>${esc(m.nome)}</b></td><td>${esc(m.tipo || "")}</td><td>${m.medida === "km" ? "km" : "horas"}</td><td class="n">${m.ultimo ? lit(m.ultimo.horimetro) + " " + unid(m) : "—"}</td><td class="n">${m.media ? lit(m.media) + " L/" + unid(m) : "—"}</td>` +
       `<td>${m.ativo ? "ativa" : "inativa"} <button class="mini" data-dmaquina="${m.id}" data-ativo="${m.ativo}">${m.ativo ? "Desativar" : "Ativar"}</button></td></tr>`).join("") + "</table>";
 }
+
+function mostrarFornecedores() {
+  if (!dz.fornecedores) { $("#tabFornecedores").innerHTML = '<div class="msg aviso">Para cadastrar fornecedores, rode a query 013 no Supabase.</div>'; return; }
+  const busca = normNome($("#dfoBusca").value);
+  const lista = dz.fornecedores.filter(f => !busca || normNome(f.nome).includes(busca) || normNome(f.documento).includes(busca));
+  $("#tabFornecedores").innerHTML = !lista.length ? '<div class="vazio">Nenhum fornecedor encontrado.</div>' :
+    `<table><tr><th>Fornecedor</th><th>CNPJ/CPF</th><th>Telefone</th><th>Pagamento</th><th class="n">Retiradas</th><th class="n">Litros</th><th class="n">A pagar</th><th>Última retirada</th><th></th></tr>` +
+    lista.map(f => {
+      const cs = dz.cargas.filter(c => c.situacao !== "cancelada" && normNome(c.fornecedor) === normNome(f.nome));
+      const ap = cs.filter(c => c.valor_total == null).reduce((t, c) => t + Number(c.litros), 0), ult = cs.map(c => c.retirado_em).sort().pop();
+      return `<tr><td><b>${esc(f.nome)}</b>${f.ativo ? "" : " (inativo)"}${f.observacao ? `<br><small>${esc(f.observacao)}</small>` : ""}</td><td>${esc(f.documento || "—")}</td><td>${esc(f.telefone || "—")}</td><td>${f.a_prazo ? "a prazo" : "à vista"}</td>` +
+        `<td class="n">${cs.length}</td><td class="n">${lit(cs.reduce((t, c) => t + Number(c.litros), 0))}</td><td class="n">${ap ? `<span class="alerta">${lit(ap)} L</span>` : "—"}</td><td>${ult ? dataHora(ult) : "—"}</td>` +
+        `<td><button class="mini" data-dfo-hist="${esc(f.nome)}">Ver histórico</button> <button class="mini" data-dfo-editar="${f.id}">Editar</button> <button class="mini" data-dfo-ativo="${f.id}" data-ativo="${f.ativo}">${f.ativo ? "Desativar" : "Ativar"}</button></td></tr>`;
+    }).join("") + "</table>";
+}
+$("#dfoBusca").addEventListener("input", () => mostrarFornecedores());
+$("#btFornecedor").addEventListener("click", async () => {
+  const nome = $("#dfoNome").value.trim();
+  if (!nome) return msg("#dfoMsg", "erro", "Informe o nome do fornecedor.");
+  if ((dz.fornecedores || []).some(f => normNome(f.nome) === normNome(nome))) return msg("#dfoMsg", "erro", "Esse fornecedor já está cadastrado.");
+  const { error } = await db.from("diesel_fornecedores").insert({ nome, documento: $("#dfoDoc").value.trim() || null, telefone: $("#dfoTel").value.trim() || null,
+    a_prazo: $("#dfoPrazo").checked, observacao: $("#dfoObs").value.trim() || null });
+  if (error) return msg("#dfoMsg", "erro", /does not exist|schema cache/i.test(error.message) ? "Rode a query 013 no Supabase." : /duplicate|unique/i.test(error.message) ? "Esse fornecedor já está cadastrado." : erroTxt(error));
+  for (const id of ["#dfoNome", "#dfoDoc", "#dfoTel", "#dfoObs"]) $(id).value = ""; $("#dfoPrazo").checked = false;
+  msg("#dfoMsg", "ok", `${esc(nome)} cadastrado.`);
+  carregarDiesel();
+});
 
 // ------------------------------------------------------------------ painel do diesel
 // números de um conjunto de abastecimentos: litros, custo, horas e L/h (por quantidade inserida)
@@ -2012,12 +2057,22 @@ $("#btCarga").addEventListener("click", async () => {
   const litros = numero($("#dcLitros").value), valor = numero($("#dcValor").value), forn = $("#dcFornecedor").value.trim();
   if (!$("#dcQuando").value) return msg("#dcMsg", "erro", "Informe a data e hora da retirada.");
   if (!forn) return msg("#dcMsg", "erro", "Informe o fornecedor ou posto.");
+  let fornNome = forn;
+  if (dz.fornecedores) {
+    const cad = dz.fornecedores.find(f => normNome(f.nome) === normNome(forn));
+    if (cad) fornNome = cad.nome;
+    else {
+      if (!confirm(`"${forn}" não está no cadastro de fornecedores.\nCadastrar agora e abrir a carga?\n\n(Se for um fornecedor já cadastrado, toque em Cancelar e escolha o nome da lista.)`)) return;
+      const { error } = await db.from("diesel_fornecedores").insert({ nome: forn });
+      if (error && !/duplicate|unique/i.test(error.message)) return msg("#dcMsg", "erro", "Não foi possível cadastrar o fornecedor. " + erroTxt(error));
+    }
+  }
   if (!litros || litros <= 0) return msg("#dcMsg", "erro", "Informe os litros retirados.");
   if (!$("#dcFoto").files[0] && !confirm("Nenhuma foto do recibo ou da nota foi anexada. Abrir a carga assim mesmo?")) return;
   $("#btCarga").disabled = true; msg("#dcMsg", "ok", "Salvando…");
   try {
     const foto = await enviarFotoDiesel("cargas", $("#dcFoto").files[0]);
-    const { data, error } = await db.from("diesel_cargas").insert({ retirado_em: new Date($("#dcQuando").value).toISOString(), fornecedor: forn, litros,
+    const { data, error } = await db.from("diesel_cargas").insert({ retirado_em: new Date($("#dcQuando").value).toISOString(), fornecedor: fornNome, litros,
       valor_total: valor, comprovante_caminho: foto, observacao: $("#dcObs").value.trim() || null, registrado_por: usuario.id }).select("id,codigo,saldo_anterior_l").single();
     if (error) throw error;
     for (const id of ["#dcLitros", "#dcValor", "#dcObs", "#dcFoto"]) $(id).value = "";
@@ -2051,42 +2106,63 @@ $("#btNota").addEventListener("click", async () => {
 });
 
 // ------------------------------------------------------------------ extrato por fornecedor (diesel pago depois)
+// nome sem acento, maiúscula ou espaço sobrando, para achar "posto x" ao pesquisar "Posto X"
+const normNome = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+function nomesFornecedores(soAtivos) {
+  const cad = (dz.fornecedores || []).filter(f => !soAtivos || f.ativo).map(f => f.nome);
+  const usados = dz.cargas.filter(c => c.situacao !== "cancelada").map(c => c.fornecedor).filter(n => !cad.some(x => normNome(x) === normNome(n)));
+  return [...new Set([...cad, ...(dz.fornecedores ? [] : usados)])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+function aplicarAtalhoForn(v) {
+  const h = new Date(), de = { mes: new Date(h.getFullYear(), h.getMonth(), 1), mesant: new Date(h.getFullYear(), h.getMonth() - 1, 1), 90: new Date(h.getTime() - 89 * 86400000), ano: new Date(h.getFullYear(), 0, 1) }[v];
+  if (v === "tudo") { const p = dz.cargas.map(c => dataBR(c.retirado_em)).sort()[0]; $("#dxDe").value = p || iso(h); $("#dxAte").value = iso(h); }
+  else if (de) { $("#dxDe").value = iso(de); $("#dxAte").value = iso(v === "mesant" ? new Date(h.getFullYear(), h.getMonth(), 0) : h); }
+}
 function extratoForn() {
-  const forn = $("#dxForn").value, de = $("#dxDe").value, ate = $("#dxAte").value;
-  const cargas = dz.cargas.filter(c => c.situacao !== "cancelada" && c.fornecedor === forn && dataBR(c.retirado_em) >= de && dataBR(c.retirado_em) <= ate)
+  const busca = normNome($("#dxForn").value), de = $("#dxDe").value, ate = $("#dxAte").value;
+  // nome completo (do cadastro ou já usado) acha só ele; parte do nome acha todos que contêm o texto
+  const exato = nomesFornecedores(false).some(n => normNome(n) === busca) || dz.cargas.some(c => normNome(c.fornecedor) === busca);
+  const cargas = !busca ? [] : dz.cargas.filter(c => c.situacao !== "cancelada" && (exato ? normNome(c.fornecedor) === busca : normNome(c.fornecedor).includes(busca)) && dataBR(c.retirado_em) >= de && dataBR(c.retirado_em) <= ate)
     .sort((x, y) => x.retirado_em < y.retirado_em ? -1 : 1);
+  const nomes = [...new Set(cargas.map(c => normNome(c.fornecedor)))], unico = nomes.length <= 1;
+  const cad = unico ? (dz.fornecedores || []).find(f => normNome(f.nome) === (nomes[0] || busca)) : null;
+  const forn = unico ? (cad?.nome || cargas[0]?.fornecedor || $("#dxForn").value.trim()) : `"${$("#dxForn").value.trim()}" (${nomes.length} fornecedores)`;
   const ids = new Set(cargas.map(c => c.id)), abs = dz.abs.filter(a => a.situacao === "valida" && ids.has(a.carga_id));
   const porMaq = new Map();
   for (const a of abs) { const x = porMaq.get(a.maquina_id) || { litros: 0, n: 0 }; x.litros += Number(a.litros); x.n++; porMaq.set(a.maquina_id, x); }
   const maquinas = [...porMaq].map(([id, x]) => ({ nome: dz.maquinas.find(m => m.id === id)?.nome || "?", ...x })).sort((a, b) => b.litros - a.litros);
   const litros = cargas.reduce((t, c) => t + Number(c.litros), 0), semValor = cargas.filter(c => c.valor_total == null);
-  return { forn, de, ate, cargas, maquinas, litros, abastecido: abs.reduce((t, a) => t + Number(a.litros), 0),
+  return { forn, unico, cad, de, ate, cargas, maquinas, litros, abastecido: abs.reduce((t, a) => t + Number(a.litros), 0),
            semValor, litrosSemValor: semValor.reduce((t, c) => t + Number(c.litros), 0), valor: cargas.reduce((t, c) => t + (c.valor_total == null ? 0 : Number(c.valor_total)), 0) };
 }
 function mostrarExtratoForn() {
-  const fs = [...new Set(dz.cargas.filter(c => c.situacao !== "cancelada").map(c => c.fornecedor))].sort();
-  const atual = $("#dxForn").value || fs.find(f => dz.cargas.some(c => c.fornecedor === f && c.valor_total == null && c.situacao !== "cancelada")) || fs[0] || "";
-  $("#dxForn").innerHTML = fs.map(f => `<option ${f === atual ? "selected" : ""}>${esc(f)}</option>`).join("");
-  if (!$("#dxDe").value) { const h = new Date(); $("#dxDe").value = iso(new Date(h.getFullYear(), h.getMonth(), 1)); $("#dxAte").value = iso(h); }
+  const fs = nomesFornecedores(false);
+  $("#dxFornLista").innerHTML = fs.map(f => `<option>${esc(f)}</option>`).join("");
+  if (!$("#dxForn").value) $("#dxForn").value = (dz.fornecedores || []).find(f => f.ativo && f.a_prazo)?.nome
+    || fs.find(f => dz.cargas.some(c => normNome(c.fornecedor) === normNome(f) && c.valor_total == null && c.situacao !== "cancelada")) || fs[0] || "";
+  if (!$("#dxDe").value) aplicarAtalhoForn($("#dxAtalho").value || "mes");
   const X = extratoForn();
-  if (!X.forn || !X.cargas.length) { $("#dxResumo").innerHTML = '<div class="vazio">Nenhuma retirada deste fornecedor no período.</div>'; $("#dxCargas").innerHTML = $("#dxMaquinas").innerHTML = ""; $("#dxPagarInfo").textContent = ""; return; }
-  $("#dxResumo").innerHTML = `<p><b>${esc(X.forn)}</b> · ${br(X.de)} a ${br(X.ate)}: <b>${X.cargas.length} retirada(s), ${lit(X.litros)} L</b>` +
+  if (!X.forn || !X.cargas.length) { $("#dxResumo").innerHTML = `<div class="vazio">${X.forn ? "Nenhuma retirada deste fornecedor no período. Para ver tudo, escolha Período: Todo o histórico." : "Digite ou escolha o fornecedor."}</div>`; $("#dxCargas").innerHTML = $("#dxMaquinas").innerHTML = ""; $("#dxPagarInfo").textContent = ""; return; }
+  $("#dxResumo").innerHTML = `<p><b>${esc(X.forn)}</b>${X.cad?.documento ? ` · ${esc(X.cad.documento)}` : ""}${X.cad?.telefone ? ` · ${esc(X.cad.telefone)}` : ""}${X.cad?.a_prazo ? " · a prazo" : ""} · ${br(X.de)} a ${br(X.ate)}: <b>${X.cargas.length} retirada(s), ${lit(X.litros)} L</b>` +
     (X.semValor.length ? ` · <span class="alerta">${lit(X.litrosSemValor)} L a pagar (sem valor lançado)</span>` : " · tudo com valor lançado") +
     (X.valor ? ` · valor lançado ${real(X.valor)}` : "") + `</p>`;
-  $("#dxCargas").innerHTML = `<table><tr><th>Retirada</th><th>Código</th><th class="n">Litros</th><th>Recibo</th><th class="n">Valor</th><th class="n">R$/L</th><th>Situação</th></tr>` +
-    X.cargas.map(c => `<tr><td>${dataHora(c.retirado_em)}</td><td><b>${esc(c.codigo)}</b></td><td class="n">${lit(c.litros)}</td>` +
+  $("#dxCargas").innerHTML = `<table><tr><th>Retirada</th><th>Código</th>${X.unico ? "" : "<th>Fornecedor</th>"}<th class="n">Litros</th><th>Recibo</th><th class="n">Valor</th><th class="n">R$/L</th><th>Situação</th></tr>` +
+    X.cargas.map(c => `<tr><td>${dataHora(c.retirado_em)}</td><td><b>${esc(c.codigo)}</b></td>${X.unico ? "" : `<td>${esc(c.fornecedor)}</td>`}<td class="n">${lit(c.litros)}</td>` +
       `<td>${c.comprovante_caminho ? `<button class="mini" data-dfoto="${esc(c.comprovante_caminho)}">Ver recibo</button>` : '<span class="alerta">sem recibo</span>'}` +
       `${c.nota_caminho ? ` <button class="mini" data-dfoto="${esc(c.nota_caminho)}">Comprovante</button>` : ""}</td>` +
       `<td class="n">${c.valor_total == null ? '<span class="alerta">a pagar</span>' : real(c.valor_total)}</td><td class="n">${c.valor_total == null ? "—" : (c.valor_total / c.litros).toFixed(2).replace(".", ",")}</td><td>${c.situacao}</td></tr>`).join("") +
-    `<tr class="dia"><td>TOTAL</td><td></td><td class="n">${lit(X.litros)}</td><td></td><td class="n">${X.valor ? real(X.valor) : ""}</td><td></td><td></td></tr></table>`;
+    `<tr class="dia"><td>TOTAL</td><td></td>${X.unico ? "" : "<td></td>"}<td class="n">${lit(X.litros)}</td><td></td><td class="n">${X.valor ? real(X.valor) : ""}</td><td></td><td></td></tr></table>`;
   $("#dxMaquinas").innerHTML = !X.maquinas.length ? "" : `<table><tr><th>Para onde foi o diesel</th><th class="n">Abastecimentos</th><th class="n">Litros</th></tr>` +
     X.maquinas.map(m => `<tr><td>${esc(m.nome)}</td><td class="n">${m.n}</td><td class="n">${lit(m.litros)}</td></tr>`).join("") +
     `<tr class="dia"><td>TOTAL abastecido</td><td></td><td class="n">${lit(X.abastecido)}</td></tr></table>`;
-  $("#dxPagarInfo").innerHTML = X.semValor.length
+  $("#dxPagarInfo").innerHTML = !X.unico ? "A pesquisa achou mais de um fornecedor. Escolha um nome da lista para lançar o pagamento."
+    : X.semValor.length
     ? `O valor é dividido entre as ${X.semValor.length} retirada(s) sem valor (${lit(X.litrosSemValor)} L), pelo mesmo preço por litro. As retiradas que já têm valor não mudam.`
     : "Todas as retiradas deste período já têm valor lançado.";
 }
-for (const id of ["#dxForn", "#dxDe", "#dxAte"]) $(id).addEventListener("change", mostrarExtratoForn);
+$("#dxForn").addEventListener("input", mostrarExtratoForn);
+$("#dxAtalho").addEventListener("change", () => { aplicarAtalhoForn($("#dxAtalho").value); mostrarExtratoForn(); });
+for (const id of ["#dxDe", "#dxAte"]) $(id).addEventListener("change", () => { $("#dxAtalho").value = ""; mostrarExtratoForn(); });
 $("#dxValor").addEventListener("input", () => {
   const X = extratoForn(), v = numero($("#dxValor").value);
   if (X.litrosSemValor && v > 0) $("#dxPagarInfo").innerHTML = `${real(v)} ÷ ${lit(X.litrosSemValor)} L = <b>R$ ${(v / X.litrosSemValor).toFixed(4).replace(".", ",")} por litro</b>, dividido entre ${X.semValor.length} retirada(s).`;
@@ -2094,6 +2170,7 @@ $("#dxValor").addEventListener("input", () => {
 
 $("#btPagarForn").addEventListener("click", async () => {
   const X = extratoForn(), v = numero($("#dxValor").value), f = $("#dxArq").files[0];
+  if (!X.unico) return msg("#dxMsg", "erro", "A pesquisa achou mais de um fornecedor. Escolha um nome da lista.");
   if (!X.semValor.length) return msg("#dxMsg", "erro", "Não há retirada sem valor neste período.");
   if (!v || isNaN(v) || v <= 0) return msg("#dxMsg", "erro", "Informe o valor total pago.");
   const precoL = v / X.litrosSemValor;
@@ -2129,7 +2206,7 @@ $("#btExtratoForn").addEventListener("click", () => {
   doc.setDrawColor(...azul); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21);
   doc.setFontSize(13); doc.text("Extrato de retiradas de diesel", M, 29);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
-  doc.text(`Fornecedor: ${X.forn}`, M, 35); doc.text(`Período: ${br(X.de)} a ${br(X.ate)}`, M, 40);
+  doc.text(`Fornecedor: ${X.forn}${X.cad?.documento ? " · " + X.cad.documento : ""}`, M, 35); doc.text(`Período: ${br(X.de)} a ${br(X.ate)}`, M, 40);
   const caixas = [["RETIRADAS", String(X.cargas.length)], ["LITROS RETIRADOS", lit(X.litros) + " L"], ["A PAGAR (SEM VALOR)", lit(X.litrosSemValor) + " L"], ["VALOR LANÇADO", X.valor ? real(X.valor) : "—"]];
   const larg = (W - 2 * M) / caixas.length;
   caixas.forEach(([t, v], i) => { const x = M + i * larg;
@@ -2180,6 +2257,24 @@ $("#aba-diesel").addEventListener("click", async e => {
   }
   if (d.dfoto) return abrirFotoDiesel(d.dfoto);
   if (d.dnota) { $("#dnBox").open = true; $("#dnCarga").value = d.dnota; $("#dnBox").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  if (d.dfoHist) {
+    $("#dxForn").value = d.dfoHist; $("#dxAtalho").value = "tudo"; aplicarAtalhoForn("tudo");
+    document.querySelector('#abas [data-parte="cargas"]').click(); mostrarExtratoForn();
+    return $("#dxForn").closest(".card").scrollIntoView({ behavior: "smooth" });
+  }
+  if (d.dfoAtivo) {
+    const { error } = await db.from("diesel_fornecedores").update({ ativo: d.ativo !== "true" }).eq("id", d.dfoAtivo);
+    if (error) msg("#dfoMsg", "erro", erroTxt(error)); return carregarDiesel();
+  }
+  if (d.dfoEditar) {
+    const f = dz.fornecedores.find(x => String(x.id) === d.dfoEditar);
+    const doc = prompt(`CNPJ ou CPF de ${f.nome}:`, f.documento || ""); if (doc === null) return;
+    const tel = prompt(`Telefone de ${f.nome}:`, f.telefone || ""); if (tel === null) return;
+    const prazo = confirm(`${f.nome}: retiramos e pagamos depois (a prazo)?\n\nOK = a prazo · Cancelar = à vista`);
+    const { error } = await db.from("diesel_fornecedores").update({ documento: doc.trim() || null, telefone: tel.trim() || null, a_prazo: prazo }).eq("id", f.id);
+    if (error) msg("#dfoMsg", "erro", erroTxt(error)); else msg("#dfoMsg", "ok", `${esc(f.nome)} atualizado.`);
+    return carregarDiesel();
+  }
   if (d.dmaquina) {
     const { error } = await db.from("maquinas").update({ ativo: d.ativo !== "true" }).eq("id", d.dmaquina);
     if (error) msg("#dmMsg", "erro", erroTxt(error)); return carregarDiesel();
