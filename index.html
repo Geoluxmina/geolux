@@ -160,6 +160,7 @@
         <label>Produto <select id="pProduto"><option value="">Todos</option></select></label>
         <button class="bt" id="btPainel">Atualizar</button>
         <button class="bt sec" id="btPainelPdf">Extrato do período (PDF)</button>
+        <button class="bt sec" id="btResumoDia">Resumo do dia (PDF simples)</button>
       </div>
       <div id="pMsg"></div>
       <p id="pPeriodo" style="margin:-4px 0 0;color:var(--suave)"></p>
@@ -1426,6 +1427,62 @@ async function extratoPainel(cliente) {
   doc.save(nomeComprovante(de, ate, clientes.length === 1 ? "_" + clientes[0].replace(/[^\w]+/g, "") : "_todos_clientes"));
   msg("#pMsg", "ok", `Extrato de ${br(de)} a ${br(ate)} gerado: ${clientes.length === 1 ? esc(clientes[0]) : clientes.length + " clientes, uma página para cada"}.`);
 }
+// resumo do dia em letras grandes, um cliente por linha, para mandar no WhatsApp
+async function resumoDiaPdf() {
+  const dia = $("#pAte").value || iso(new Date());
+  msg("#pMsg", "ok", "Gerando o resumo do dia…");
+  let ps, mes;
+  try { [ps, mes] = await Promise.all([buscar(dia, dia), buscar(dia.slice(0, 8) + "01", dia)]); }
+  catch (e) { return msg("#pMsg", "erro", erroTxt(e)); }
+  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" }), W = 210, M = 14, azul = [31, 58, 95];
+  const semana = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"][new Date(dia + "T12:00:00").getDay()];
+  const carr = n => `${n} carrada${n === 1 ? "" : "s"}`;
+  const totTxt = l => { const pes = l.filter(p => !p.por_carrada), bar = l.length - pes.length;
+    return [pes.length ? `${ton(pes.reduce((s, p) => s + p.liquido_kg, 0))} t` : "", bar ? `${carr(bar)} de barro` : ""].filter(Boolean).join(" + "); };
+  doc.addImage(LOGO, "PNG", M, 10, 52, 15);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(24); doc.setTextColor(...azul); doc.text("Resumo do dia", W - M, 18, { align: "right" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(14); doc.setTextColor(60); doc.text(`${semana}, ${br(dia)}`, W - M, 25, { align: "right" });
+  doc.setDrawColor(...azul); doc.setLineWidth(0.8); doc.line(M, 30, W - M, 30);
+  // total do dia
+  doc.setFillColor(...azul); doc.roundedRect(M, 36, W - 2 * M, 38, 3, 3, "F");
+  doc.setTextColor(255); doc.setFontSize(13); doc.text("TOTAL QUE SAIU NO DIA", M + 8, 46);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(totTxt(ps).length > 24 ? 22 : 28);
+  doc.text(ps.length ? totTxt(ps) : "Nenhuma carrada", M + 8, 59);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(14);
+  doc.text(ps.length ? `${carr(ps.length)} · ${[...new Set(ps.map(p => p.cliente))].length} cliente(s)` : "", M + 8, 68);
+  // por cliente: cada um num bloco separado por linha
+  let y = 88;
+  doc.setTextColor(...azul); doc.setFontSize(16); doc.text("Por cliente", M, y); y += 4;
+  const clientes = [...new Set(ps.map(p => p.cliente))].map(c => ({ c, l: ps.filter(p => p.cliente === c) }))
+    .sort((a, b) => b.l.reduce((s, p) => s + p.liquido_kg, 0) - a.l.reduce((s, p) => s + p.liquido_kg, 0) || b.l.length - a.l.length);
+  clientes.forEach(({ c, l }, i) => {
+    if (y > 260) { doc.addPage(); y = 20; }
+    if (i % 2 === 0) { doc.setFillColor(238, 242, 247); doc.rect(M, y, W - 2 * M, 20, "F"); }
+    doc.setFillColor(...azul); doc.rect(M, y, 1.6, 20, "F");
+    doc.setDrawColor(...azul); doc.setLineWidth(0.4); doc.line(M, y + 20, W - M, y + 20);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(20);
+    doc.text(doc.splitTextToSize(c, 105)[0], M + 4, y + 9);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10.5); doc.setTextColor(100);
+    doc.text([...new Set(l.map(p => p.produto || p.produto_balanca))].join(", "), M + 4, y + 15.5);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(...azul);
+    doc.text(totTxt(l), W - M - 4, y + 9, { align: "right" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.setTextColor(100);
+    doc.text(carr(l.length), W - M - 4, y + 15.5, { align: "right" });
+    y += 20;
+  });
+  if (!clientes.length) { doc.setFontSize(13); doc.setTextColor(100); doc.text("Não houve retirada neste dia.", M, y + 10); y += 14; }
+  // acumulado do mês
+  y += 8; if (y > 262) { doc.addPage(); y = 20; }
+  doc.setDrawColor(200); doc.setLineWidth(0.3); doc.roundedRect(M, y, W - 2 * M, 18, 2, 2);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(12); doc.setTextColor(60);
+  doc.text(`No mês até hoje (${br(dia.slice(0, 8) + "01").slice(0, 5)} a ${br(dia).slice(0, 5)})`, M + 5, y + 7.5);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(20);
+  doc.text(mes.length ? `${totTxt(mes)} · ${carr(mes.length)}` : "—", M + 5, y + 14);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(140);
+  doc.text(`${EMPRESA} · gerado em ${new Date().toLocaleString("pt-BR")}`, W / 2, 290, { align: "center" });
+  doc.save(`Resumo_do_dia_${dia}.pdf`);
+  msg("#pMsg", "ok", `Resumo de ${br(dia)} gerado: ${ps.length ? carr(ps.length) + ", " + totTxt(ps) : "nenhuma carrada"}. Para outro dia, mude a data "Até".`);
+}
 async function carregarPainel() {
   $("#pKpis").innerHTML = '<div class="vazio">Carregando…</div>';
   // "desde o início" começa na primeira carrada gravada
@@ -1539,6 +1596,7 @@ async function carregarPainel() {
 }
 $("#btPainel").addEventListener("click", carregarPainel);
 $("#btPainelPdf").addEventListener("click", () => extratoPainel($("#pCliente").value));
+$("#btResumoDia").addEventListener("click", resumoDiaPdf);
 $("#pAtalho").addEventListener("change", e => { if (e.target.value) { aplicarAtalhoPainel(e.target.value); carregarPainel(); } });
 $("#pCliente").addEventListener("change", carregarPainel);
 $("#pProduto").addEventListener("change", carregarPainel);
