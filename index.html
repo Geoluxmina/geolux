@@ -351,14 +351,19 @@
             <div class="grafico" id="dpGraf"></div>
           </div>
           <div class="card">
-            <h3 style="margin-top:0">Aumento e redução de consumo</h3>
+            <h3 style="margin-top:0">Quem mais gastou e o que mudou</h3>
+            <div id="dpVila"></div>
             <div id="dpVariacao"></div>
           </div>
         </div>
         <div class="card">
           <h3 style="margin-top:0">Consumo por máquina</h3>
-          <p style="margin-top:0;color:var(--suave);font-size:13px">Clique numa máquina para ver só ela. L/h é calculado entre dois abastecimentos com tanque cheio; a variação compara com o período anterior de mesma duração.</p>
+          <p style="margin-top:0;color:var(--suave);font-size:13px">Da máquina que mais gastou (R$) para a que menos gastou. Clique numa máquina para ver só ela. L/h é calculado entre dois abastecimentos com tanque cheio; a variação compara com o período anterior de mesma duração.</p>
           <div class="tabela" id="dpMaquinas"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Por categoria</h3>
+          <div class="tabela" id="dpCategorias"></div>
         </div>
         <div class="card">
           <h3 style="margin-top:0">Consumo mês a mês (L/h)</h3>
@@ -1672,6 +1677,8 @@ function resumoDiesel(as) {
            horas: as.reduce((s, a) => s + (a.horas || 0), 0), lh: hC ? lC / hC : null };
 }
 const pct = (v, b) => b ? (v / b - 1) * 100 : null;
+// quanto o aumento (ou a queda) do L/h custou no período: diferença de L/h × horas trabalhadas × preço médio pago
+const excesso = (x, a) => { if (!x.lh || !a.lh || !x.horas || !x.litros) return null; const litros = (x.lh - a.lh) * x.horas; return { litros, reais: litros * x.custo / x.litros }; };
 const fmtPct = p => (p > 0 ? "+" : "") + p.toFixed(0) + "%";
 let painelDiesel = null;
 
@@ -1750,7 +1757,7 @@ async function mostrarPainelDiesel() {
   // por máquina, com o período anterior
   const todosPer = dz.abs.filter(a => a.situacao === "valida" && entre(a, de, ate)), todosAnt = dz.abs.filter(a => a.situacao === "valida" && entre(a, deAnt, ateAnt));
   const linhas = dz.maquinas.map(m => ({ m, r: resumoDiesel(todosPer.filter(a => a.maquina_id === m.id)), a: resumoDiesel(todosAnt.filter(a => a.maquina_id === m.id)) }))
-    .filter(l => l.r.n || l.a.n).sort((x, y) => y.r.litros - x.r.litros);
+    .filter(l => l.r.n || l.a.n).sort((x, y) => y.r.custo - x.r.custo || y.r.litros - x.r.litros);
   const totL = linhas.reduce((s, l) => s + l.r.litros, 0) || 1, maior = Math.max(...linhas.map(l => l.r.litros), 1);
   const corVar = (p, menorMelhor = true) => p == null ? "" : Math.abs(p) < 5 ? "color:var(--suave)" : (p < 0) === menorMelhor ? "color:var(--ok)" : "color:var(--erro)";
   $("#dpMaquinas").innerHTML = !linhas.length ? '<div class="vazio">Nenhum abastecimento no período.</div>' :
@@ -1769,15 +1776,35 @@ async function mostrarPainelDiesel() {
     const u = unid(m);
     if (x.lh && a.lh) {
       const p = pct(x.lh, a.lh);
-      if (p <= -5) achados.push(["ok", `<b>${esc(m.nome)}</b>: consumo caiu ${Math.abs(p).toFixed(0)}% (de ${lit(a.lh)} para ${lit(x.lh)} L/${u}).`]);
-      else if (p >= 5) achados.push([p >= 20 ? "erro" : "aviso", `<b>${esc(m.nome)}</b>: consumo subiu ${p.toFixed(0)}% (de ${lit(a.lh)} para ${lit(x.lh)} L/${u}). ${p >= 20 ? "Vale verificar a máquina (filtro, bico, vazamento) e o lançamento do horímetro." : ""}`]);
+      if (p <= -5) achados.push(["ok", `<b>${esc(m.nome)}</b>: consumo caiu ${Math.abs(p).toFixed(0)}% (de ${lit(a.lh)} para ${lit(x.lh)} L/${u})${excesso(x, a) ? `, economia de cerca de <b>${lit(-excesso(x, a).litros)} L e ${real(-excesso(x, a).reais)}</b> no período` : ""}.`]);
+      else if (p >= 5) achados.push([p >= 20 ? "erro" : "aviso", `<b>${esc(m.nome)}</b>: consumo subiu ${p.toFixed(0)}% (de ${lit(a.lh)} para ${lit(x.lh)} L/${u})${excesso(x, a) ? `, cerca de <b>${lit(excesso(x, a).litros)} L e ${real(excesso(x, a).reais)} a mais</b> no período` : ""}. ${p >= 20 ? "Vale verificar a máquina (filtro, bico, vazamento) e o lançamento do horímetro." : ""}`]);
       else achados.push(["", `<b>${esc(m.nome)}</b>: consumo estável (${lit(x.lh)} L/${u}, ${fmtPct(p)}).`]);
     } else if (x.n && !a.n) achados.push(["", `<b>${esc(m.nome)}</b>: sem abastecimento no período anterior para comparar.`]);
     else if (!x.n && a.n) achados.push(["", `<b>${esc(m.nome)}</b>: nenhum abastecimento neste período (no anterior foram ${lit(a.litros)} L).`]);
     else if (!x.lh) achados.push(["", `<b>${esc(m.nome)}</b>: ${lit(x.litros)} L, mas ainda sem dois abastecimentos de tanque cheio para calcular o L/h.`]);
   }
   $("#dpVariacao").innerHTML = achados.length ? achados.map(([t, h]) => `<div class="msg ${t}" style="${t ? "" : "background:var(--cinza)"}">${h}</div>`).join("") : '<div class="vazio">—</div>';
-  painelDiesel = { de, ate, deAnt, ateAnt, n, r, rA, linhas, achados, per, maqSel, nomeMaq };
+  // a "vilã": quem mais gastou em R$, e a categoria que mais gastou
+  const cats = new Map();
+  for (const { m, r: x, a } of linhas) {
+    const k = m.tipo || "Sem tipo", c = cats.get(k) || { tipo: k, maqs: 0, per: [], ant: [] };
+    c.maqs++; c.per.push(...todosPer.filter(z => z.maquina_id === m.id)); c.ant.push(...todosAnt.filter(z => z.maquina_id === m.id)); cats.set(k, c);
+  }
+  const categorias = [...cats.values()].map(c => ({ ...c, r: resumoDiesel(c.per), a: resumoDiesel(c.ant) })).filter(c => c.r.n).sort((x, y) => y.r.custo - x.r.custo);
+  const custoTot = categorias.reduce((t, c) => t + c.r.custo, 0) || 1;
+  const vila = linhas.find(l => l.r.n), vilas = [];
+  if (vila) {
+    const ex = excesso(vila.r, vila.a);
+    vilas.push(`<b>${esc(vila.m.nome)}</b> foi a máquina que mais gastou: <b>${real(vila.r.custo)}</b> (${(vila.r.custo / custoTot * 100).toFixed(0)}% do diesel do período, ${lit(vila.r.litros)} L)` +
+      (ex && ex.reais > 0 ? `. Comparado ao período anterior, consumiu cerca de <b>${real(ex.reais)} a mais</b> pelo aumento do L/h.` : "."));
+  }
+  if (categorias.length > 1) vilas.push(`Categoria que mais gastou: <b>${esc(categorias[0].tipo)}</b>, ${real(categorias[0].r.custo)} (${(categorias[0].r.custo / custoTot * 100).toFixed(0)}% do total).`);
+  $("#dpVila").innerHTML = vilas.map(v => `<div class="msg aviso">${v}</div>`).join("");
+  $("#dpCategorias").innerHTML = !categorias.length ? '<div class="vazio">Nenhum abastecimento no período. Preencha o tipo de cada máquina em Máquinas.</div>' :
+    `<table><tr><th>Categoria</th><th class="n">Máquinas</th><th class="n">Litros</th><th class="n">Trabalhou</th><th class="n">Consumo</th><th class="n">Período anterior</th><th class="n">Custo</th><th class="n">% do custo</th><th class="n">Custo por hora</th></tr>` +
+    categorias.map(c => { const p = c.r.lh && c.a.lh ? pct(c.r.lh, c.a.lh) : null;
+      return `<tr><td><b>${esc(c.tipo)}</b></td><td class="n">${c.maqs}</td><td class="n">${lit(c.r.litros)}</td><td class="n">${c.r.horas ? lit(c.r.horas) + " h" : "—"}</td><td class="n">${c.r.lh ? lit(c.r.lh) + " L/h" : "—"}${p != null && Math.abs(p) >= 5 ? ` <span style="${corVar(p)}">(${p < 0 ? "▼" : "▲"} ${Math.abs(p).toFixed(0)}%)</span>` : ""}</td><td class="n">${c.a.lh ? lit(c.a.lh) + " L/h" : "—"}</td><td class="n"><b>${real(c.r.custo)}</b></td><td class="n">${(c.r.custo / custoTot * 100).toFixed(0)}%</td><td class="n">${c.r.horas ? real(c.r.custo / c.r.horas) : "—"}</td></tr>`; }).join("") + "</table>";
+  painelDiesel = { de, ate, deAnt, ateAnt, n, r, rA, linhas, achados, per, maqSel, nomeMaq, categorias, custoTot, vilas };
 
   // L/h mês a mês (últimos 6 meses até o fim do período)
   const meses = []; { const f = new Date(ate + "T12:00:00"); for (let i = 5; i >= 0; i--) { const d = new Date(f.getFullYear(), f.getMonth() - i, 1); meses.push(iso(d).slice(0, 7)); } }
@@ -1849,9 +1876,17 @@ $("#btRelDiesel").addEventListener("click", () => {
       const p = Number((t.match(/\d+/) || [0])[0]); if (p >= 5) d.cell.styles.textColor = t.startsWith("redução") ? [30, 123, 69] : [180, 35, 24]; } } });
   let y = doc.lastAutoTable.finalY + 7;
   if (y > 175) { doc.addPage(); y = 18; }
-  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text("Aumento e redução de consumo", M, y); y += 5;
+  if (P.categorias.length) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text("Por categoria", M, y);
+    doc.autoTable({ ...estilo, startY: y + 3, head: [["Categoria", "Máquinas", "Litros", "Trabalhou", "Consumo", "Período anterior", "Custo", "% do custo", "Custo por hora"]],
+      body: P.categorias.map(c => [c.tipo, c.maqs, lit(c.r.litros), c.r.horas ? lit(c.r.horas) : "—", c.r.lh ? lit(c.r.lh) : "—", c.a.lh ? lit(c.a.lh) : "—", real(c.r.custo), (c.r.custo / P.custoTot * 100).toFixed(0) + "%", c.r.horas ? real(c.r.custo / c.r.horas) : "—"]),
+      columnStyles: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map(i => [i, { halign: "right" }])) });
+    y = doc.lastAutoTable.finalY + 7;
+    if (y > 175) { doc.addPage(); y = 18; }
+  }
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text("Quem mais gastou e o que mudou", M, y); y += 5;
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
-  for (const [, h] of P.achados) {
+  for (const h of [...P.vilas, ...P.achados.map(([, t]) => t)]) {
     const t = doc.splitTextToSize("• " + h.replace(/<[^>]+>/g, ""), W - 2 * M);
     if (y + t.length * 4 > 200) { doc.addPage(); y = 18; }
     doc.text(t, M, y); y += t.length * 4 + 1;
