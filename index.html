@@ -964,11 +964,11 @@ async function buscar(de, ate, { canceladas = false } = {}) {
 
 async function carregarFiltros() {
   const [{ data: cl }, { data: pr }] = await Promise.all([
-    db.from("clientes").select("nome,nome_balanca").order("nome"),
+    db.from("clientes").select("*").order("nome"),
     db.from("produtos").select("nome").order("nome")]);
   const manter = (sel, itens) => { const v = $(sel).value; $(sel).innerHTML = '<option value="">Todos</option>' + itens.map(i => `<option>${esc(i)}</option>`).join(""); $(sel).value = v; };
   const vistos = new Set();
-  manter("#fCliente", (cl || []).map(c => c.nome).filter(n => { const k = normNome(n); return !vistos.has(k) && vistos.add(k); }));
+  manter("#fCliente", (cl || []).filter(c => !c.unir_em).map(c => c.nome).filter(n => { const k = normNome(n); return !vistos.has(k) && vistos.add(k); }));
   manter("#fProduto", (pr || []).map(p => p.nome));
 }
 
@@ -1301,7 +1301,7 @@ async function carregarCadastros() {
     db.from("produto_apelidos").select("*").order("apelido"), db.from("produtos").select("*").order("nome"),
     db.from("clientes").select("*").order("nome"), db.from("perfis").select("*").order("email"),
     db.from("placas").select("*").order("placa")]);
-  const opCli = sel => '<option value="">—</option>' + (cl || []).map(c => `<option value="${c.id}" ${c.id === sel ? "selected" : ""}>${esc(c.nome)}</option>`).join("");
+  const opCli = sel => '<option value="">—</option>' + (cl || []).filter(c => !c.unir_em).map(c => `<option value="${c.id}" ${c.id === sel ? "selected" : ""}>${esc(c.nome)}</option>`).join("");
   $("#npCliente").innerHTML = opCli(null);
   $("#tabPlacas").innerHTML = (pl || []).length ? `<table><tr><th>Placa</th><th>Cliente</th><th>Motorista</th><th>Transportador</th><th>Observação</th><th></th></tr>` +
     pl.map(p => `<tr><td><b>${esc(p.placa)}</b></td><td><select data-campo="cliente_id">${opCli(p.cliente_id)}</select></td><td><input value="${esc(p.motorista)}" data-campo="motorista"></td><td><input value="${esc(p.transportador)}" data-campo="transportador"></td><td><input value="${esc(p.observacao)}" data-campo="observacao"></td><td><button class="mini" data-salvar-placa="${esc(p.placa)}">Salvar</button></td></tr>`).join("") + "</table>"
@@ -1311,8 +1311,12 @@ async function carregarCadastros() {
     (ap || []).map(a => `<tr><td>${esc(a.apelido)}</td><td><select data-apelido="${esc(a.apelido)}">${opcoes(a.produto_id)}</select>${a.produto_id ? "" : ' <span class="alerta">sem associação</span>'}</td></tr>`).join("") + "</table>";
   $("#tabProdutos").innerHTML = `<table><tr><th>Produto</th><th>Situação</th></tr>` +
     (pr || []).map(p => `<tr><td>${esc(p.nome)}</td><td>${p.ativo ? "ativo" : "inativo"} <button class="mini" data-produto="${p.id}" data-ativo="${p.ativo}">${p.ativo ? "Desativar" : "Ativar"}</button></td></tr>`).join("") + "</table>";
-  $("#tabClientes").innerHTML = `<table><tr><th>Nome na balança</th><th>Nome completo</th><th>CPF/CNPJ</th><th>Telefone</th><th></th></tr>` +
-    (cl || []).map(c => `<tr data-cliente="${c.id}"><td>${esc(c.nome_balanca)}</td><td><input value="${esc(c.nome)}" data-campo="nome"></td><td><input value="${esc(c.cpf_cnpj)}" data-campo="cpf_cnpj"></td><td><input value="${esc(c.telefone)}" data-campo="telefone"></td><td><button class="mini" data-salvar="${c.id}">Salvar</button></td></tr>`).join("") + "</table>";
+  // nome da balança juntado a outro cliente (query 015) não aparece: as carradas dele já contam no principal
+  const juntar = (cl || []).some(c => "unir_em" in c), principais = (cl || []).filter(c => !c.unir_em);
+  const opJuntar = c => `<select data-juntar="${c.id}"><option value="">—</option>${principais.filter(x => x.id !== c.id).map(x => `<option value="${x.id}">${esc(x.nome)} (${esc(x.nome_balanca)})</option>`).join("")}</select>`;
+  $("#tabClientes").innerHTML = `<table><tr><th>Nome na balança</th><th>Nome completo</th><th>CPF/CNPJ</th><th>Telefone</th>${juntar ? "<th>Juntar com</th>" : ""}<th></th></tr>` +
+    principais.map(c => `<tr data-cliente="${c.id}"><td>${esc(c.nome_balanca)}</td><td><input value="${esc(c.nome)}" data-campo="nome"></td><td><input value="${esc(c.cpf_cnpj)}" data-campo="cpf_cnpj"></td><td><input value="${esc(c.telefone)}" data-campo="telefone"></td>${juntar ? `<td>${opJuntar(c)}</td>` : ""}<td><button class="mini" data-salvar="${c.id}">Salvar</button></td></tr>`).join("") + "</table>" +
+    (juntar ? '<p style="color:var(--suave);font-size:13px">Juntar com: use quando a balança escrever o mesmo cliente com outro nome. O nome some da lista e todas as carradas dele passam a contar no cliente escolhido.</p>' : "");
   $("#tabUsuarios").innerHTML = `<table><tr><th>E-mail</th><th>Nome</th><th>Perfil</th></tr>` +
     (us || []).map(u => `<tr><td>${esc(u.email)}</td><td>${esc(u.nome || "")}</td><td>${NOMES_PAPEL[u.papel] || esc(u.papel)}</td></tr>`).join("") + "</table>";
 }
@@ -1361,7 +1365,18 @@ $("#tabClientes").addEventListener("click", async e => {
   const tr = e.target.closest("tr"), dados = {};
   tr.querySelectorAll("input").forEach(i => dados[i.dataset.campo] = i.value.trim() || null);
   if (!dados.nome) return alert("O nome completo não pode ficar vazio.");
+  const sel = tr.querySelector("[data-juntar]");
+  if (sel?.value) {
+    const alvo = sel.options[sel.selectedIndex].text.replace(/ \([^)]*\)$/, "");
+    if (!confirm(`Juntar ${tr.cells[0].innerText.split("\n")[0]} com ${alvo}? Todas as carradas deste nome passam a contar como ${alvo}.`)) return;
+    dados.unir_em = Number(sel.value);
+    const r = await db.from("clientes").select("nome").eq("id", dados.unir_em).single();
+    if (r.data) dados.nome = r.data.nome;
+    await db.from("placas").update({ cliente_id: dados.unir_em }).eq("cliente_id", id);
+    await db.from("clientes").update({ unir_em: dados.unir_em, nome: dados.nome }).eq("unir_em", id);
+  }
   const { error } = await db.from("clientes").update(dados).eq("id", id);
+  if (!error && dados.unir_em) { carregarFiltros(); return carregarCadastros(); }
   if (error) alert(error.message); else { e.target.textContent = "Salvo"; carregarFiltros(); }
 });
 
