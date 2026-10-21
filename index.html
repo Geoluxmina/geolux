@@ -1438,7 +1438,7 @@ async function resumoDiaPdf() {
   const semana = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"][new Date(dia + "T12:00:00").getDay()];
   const carr = n => `${n} carrada${n === 1 ? "" : "s"}`;
   const totTxt = l => { const pes = l.filter(p => !p.por_carrada), bar = l.length - pes.length;
-    return [pes.length ? `${ton(pes.reduce((s, p) => s + p.liquido_kg, 0))} t` : "", bar ? `${carr(bar)} de barro` : ""].filter(Boolean).join(" + "); };
+    return [pes.length ? `${ton(pes.reduce((s, p) => s + p.liquido_kg, 0))} t` : "", bar ? `${bar} de barro (sem peso)` : ""].filter(Boolean).join(" + "); };
   doc.addImage(LOGO, "PNG", M, 10, 52, 15);
   doc.setFont("helvetica", "bold"); doc.setFontSize(24); doc.setTextColor(...azul); doc.text("Resumo do dia", W - M, 18, { align: "right" });
   doc.setFont("helvetica", "normal"); doc.setFontSize(14); doc.setTextColor(60); doc.text(`${semana}, ${br(dia)}`, W - M, 25, { align: "right" });
@@ -1446,10 +1446,10 @@ async function resumoDiaPdf() {
   // total do dia
   doc.setFillColor(...azul); doc.roundedRect(M, 36, W - 2 * M, 38, 3, 3, "F");
   doc.setTextColor(255); doc.setFontSize(13); doc.text("TOTAL QUE SAIU NO DIA", M + 8, 46);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(totTxt(ps).length > 24 ? 22 : 28);
-  doc.text(ps.length ? totTxt(ps) : "Nenhuma carrada", M + 8, 59);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(14);
-  doc.text(ps.length ? `${carr(ps.length)} · ${[...new Set(ps.map(p => p.cliente))].length} cliente(s)` : "", M + 8, 68);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(30);
+  doc.text(ps.length ? carr(ps.length) : "Nenhuma carrada", M + 8, 60);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(13);
+  doc.text(ps.length ? `${totTxt(ps)} · ${[...new Set(ps.map(p => p.cliente))].length} cliente(s)` : "", M + 8, 69);
   // por cliente: cada um num bloco separado por linha
   let y = 88;
   doc.setTextColor(...azul); doc.setFontSize(16); doc.text("Por cliente", M, y); y += 4;
@@ -1465,9 +1465,9 @@ async function resumoDiaPdf() {
     doc.setFont("helvetica", "normal"); doc.setFontSize(10.5); doc.setTextColor(100);
     doc.text([...new Set(l.map(p => p.produto || p.produto_balanca))].join(", "), M + 4, y + 15.5);
     doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(...azul);
-    doc.text(totTxt(l), W - M - 4, y + 9, { align: "right" });
-    doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.setTextColor(100);
-    doc.text(carr(l.length), W - M - 4, y + 15.5, { align: "right" });
+    doc.setFontSize(17); doc.text(carr(l.length), W - M - 4, y + 9.5, { align: "right" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10.5); doc.setTextColor(100);
+    doc.text(totTxt(l), W - M - 4, y + 15.5, { align: "right" });
     y += 20;
   });
   if (!clientes.length) { doc.setFontSize(13); doc.setTextColor(100); doc.text("Não houve retirada neste dia.", M, y + 10); y += 14; }
@@ -1477,7 +1477,7 @@ async function resumoDiaPdf() {
   doc.setFont("helvetica", "normal"); doc.setFontSize(12); doc.setTextColor(60);
   doc.text(`No mês até hoje (${br(dia.slice(0, 8) + "01").slice(0, 5)} a ${br(dia).slice(0, 5)})`, M + 5, y + 7.5);
   doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(20);
-  doc.text(mes.length ? `${totTxt(mes)} · ${carr(mes.length)}` : "—", M + 5, y + 14);
+  doc.text(mes.length ? `${carr(mes.length)} · ${totTxt(mes)}` : "—", M + 5, y + 14);
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(140);
   doc.text(`${EMPRESA} · gerado em ${new Date().toLocaleString("pt-BR")}`, W / 2, 290, { align: "center" });
   doc.save(`Resumo_do_dia_${dia}.pdf`);
