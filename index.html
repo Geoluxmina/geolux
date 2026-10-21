@@ -507,6 +507,13 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const kg = v => Math.round(v).toLocaleString("pt-BR");
 const ton = v => (v / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+// produtos vendidos por carrada (não se pesa): contam como carrada e ficam fora das toneladas
+const POR_CARRADA = ["barro"];
+const ehPorCarrada = p => POR_CARRADA.some(n => String(p.produto || p.produto_balanca || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() === n);
+const liqTxt = p => p.por_carrada ? "por carrada" : kg(p.liquido_kg);
+// toneladas de um grupo; grupo só de barro mostra "por carrada"
+const tonG = g => g.pesadas === 0 ? "por carrada" : ton(g.kg);
+const barroTxt = ps => { const n = ps.filter(p => p.por_carrada).length; return n ? ` + ${n} carrada${n > 1 ? "s" : ""} de barro` : ""; };
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const br = s => s ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : "";
 const brHora = s => s ? br(s.slice(0, 10)) + " " + s.slice(11, 16) : "";
@@ -548,7 +555,7 @@ function alertas(p) {
   const min = (new Date(p.saida_em) - new Date(p.entrada_em)) / 60000;
   if (min <= 0) a.push("saída no mesmo minuto da entrada");
   else if (min > 180) a.push(`${(min / 60).toFixed(1).replace(".", ",")} h entre entrada e saída`);
-  if (p.liquido_kg !== p.peso_saida_kg - p.peso_entrada_kg) a.push("líquido diferente de saída menos entrada");
+  if (!p.por_carrada && p.liquido_kg !== p.peso_saida_kg - p.peso_entrada_kg) a.push("líquido diferente de saída menos entrada");
   if (!p.produto) a.push(`produto "${p.produto_balanca}" sem associação`);
   return a.join("; ");
 }
@@ -762,7 +769,7 @@ $("#btRemover").addEventListener("click", limparAnexo);
 
 function tabelaPesagens(ps) {
   return `<div class="tabela"><table><tr><th>Tiquete</th><th>Placa</th><th>Produto</th><th>Cliente</th><th>Motorista</th><th>Nº Nota</th><th>Entrada</th><th class="n">Tara (kg)</th><th>Saída</th><th class="n">Bruto (kg)</th><th class="n">Líquido (kg)</th><th>Observação</th></tr>` +
-    ps.map(p => `<tr><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto_balanca)}</td><td>${esc(p.cliente_balanca)}</td><td>${esc(p.motorista || "—")}</td><td>${esc(p.nota || "—")}</td><td>${brHora(p.entrada_em)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td class="n"><b>${kg(p.liquido_kg)}</b></td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") +
+    ps.map(p => `<tr><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto_balanca)}</td><td>${esc(p.cliente_balanca)}</td><td>${esc(p.motorista || "—")}</td><td>${esc(p.nota || "—")}</td><td>${brHora(p.entrada_em)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td class="n"><b>${liqTxt(p)}</b></td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") +
     `</table></div>`;
 }
 
@@ -902,7 +909,10 @@ async function buscar(de, ate, { canceladas = false } = {}) {
     todas.push(...data);
     if (data.length < 1000) break;
   }
-  return todas.filter(p => !(p.motivo_cancelamento || "").startsWith("Anexo cancelado: "));
+  return todas.filter(p => !(p.motivo_cancelamento || "").startsWith("Anexo cancelado: ")).map(p => {
+    if (ehPorCarrada(p)) { p.por_carrada = true; p.liquido_balanca_kg = p.liquido_kg; p.liquido_kg = 0; }
+    return p;
+  });
 }
 
 async function carregarFiltros() {
@@ -936,8 +946,8 @@ async function filtrar() {
 function agrupar(ps, chave) {
   const m = new Map();
   for (const x of ps) {
-    const k = chave(x); if (!m.has(k.id)) m.set(k.id, { ...k, carradas: 0, kg: 0 });
-    const g = m.get(k.id); g.carradas++; g.kg += x.liquido_kg;
+    const k = chave(x); if (!m.has(k.id)) m.set(k.id, { ...k, carradas: 0, kg: 0, pesadas: 0 });
+    const g = m.get(k.id); g.carradas++; g.kg += x.liquido_kg; if (!x.por_carrada) g.pesadas++;
   }
   return [...m.values()];
 }
@@ -954,16 +964,16 @@ async function mostrarRelatorio() {
   try { atual = await filtrar(); } catch (e) { $("#relTabela").innerHTML = ""; return msg("#relMsg", "erro", erroTxt(e)); }
   const validas = atual.filter(x => x.situacao === "valida");
   const tot = validas.reduce((s, x) => s + x.liquido_kg, 0);
-  $("#kpis").innerHTML = [["Carradas", validas.length], ["Total retirado", ton(tot) + " t"],
+  $("#kpis").innerHTML = [["Carradas", validas.length], ["Total retirado", ton(tot) + " t", barroTxt(validas)],
     ["Clientes", new Set(validas.map(x => x.cliente)).size], ...(papel === "admin" ? [["A conferir", validas.filter(alertas).length],
       ["Sem motorista", `${validas.filter(x => !x.motorista).length} (${validas.length ? Math.round(validas.filter(x => !x.motorista).length / validas.length * 100) : 0}%)`]] : [])]
-    .map(([a, b]) => `<div class="kpi"><small>${a}</small><b>${b}</b></div>`).join("");
+    .map(([a, b, c]) => `<div class="kpi"><small>${a}</small><b>${b}</b>${c ? `<span class="delta">${c.trim().replace(/^\+ /, "mais ")}</span>` : ""}</div>`).join("");
   if (!atual.length) return $("#relTabela").innerHTML = '<div class="vazio">Nenhuma carrada nesse período.</div>';
   const visao = $("#fVisao").value;
   if (visao === "detalhado") return $("#relTabela").innerHTML = tabelaDetalhada(atual);
   const v = VISOES[visao], linhas = agrupar(validas, v.chave);
   $("#relTabela").innerHTML = `<table><tr>${v.cols.map(c => `<th>${c}</th>`).join("")}<th class="n">Carradas</th><th class="n">Toneladas</th><th class="n">% do total</th></tr>` +
-    linhas.map(l => `<tr>${l.v.map(c => `<td>${esc(c)}</td>`).join("")}<td class="n">${l.carradas}</td><td class="n">${ton(l.kg)}</td><td class="n">${(l.kg / tot * 100).toFixed(1).replace(".", ",")}%</td></tr>`).join("") +
+    linhas.map(l => `<tr>${l.v.map(c => `<td>${esc(c)}</td>`).join("")}<td class="n">${l.carradas}</td><td class="n">${tonG(l)}</td><td class="n">${l.pesadas ? (l.kg / (tot || 1) * 100).toFixed(1).replace(".", ",") + "%" : "—"}</td></tr>`).join("") +
     `<tr class="dia"><td colspan="${v.cols.length}">TOTAL</td><td class="n">${validas.length}</td><td class="n">${ton(tot)}</td><td class="n">100%</td></tr></table>`;
 }
 
@@ -977,7 +987,7 @@ function tabelaDetalhada(ps) {
       const pc = pd.filter(p => p.cliente === c);
       for (const p of pc) {
         const obs = p.situacao === "cancelada" ? `cancelada: ${p.motivo_cancelamento}` : alertas(p);
-        h += `<tr class="${p.situacao === "cancelada" ? "cancelada" : ""}"><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto || p.produto_balanca)}</td><td>${esc(p.cliente)}</td><td>${esc(p.transportador || "—")}</td><td>${esc(p.motorista || "—")}</td><td>${esc(p.nota || "—")}</td><td>${esc(p.operador_entrada)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.entrada_em)}</td><td>${esc(p.operador_saida)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n"><b>${kg(p.liquido_kg)}</b></td><td class="alerta">${esc(obs)}</td>` +
+        h += `<tr class="${p.situacao === "cancelada" ? "cancelada" : ""}"><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto || p.produto_balanca)}</td><td>${esc(p.cliente)}</td><td>${esc(p.transportador || "—")}</td><td>${esc(p.motorista || "—")}</td><td>${esc(p.nota || "—")}</td><td>${esc(p.operador_entrada)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.entrada_em)}</td><td>${esc(p.operador_saida)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n"><b>${liqTxt(p)}</b></td><td class="alerta">${esc(obs)}</td>` +
              (papel === "admin" ? `<td>${p.situacao === "valida" ? `<button class="mini" data-cancelar="${p.ticket}">Cancelar</button>` : ""}</td>` : "") + `</tr>`;
       }
       const v = pc.filter(p => p.situacao === "valida");
@@ -1007,7 +1017,7 @@ async function mostrarConferir() {
     const ps = (await buscar($("#cDe").value, $("#cAte").value)).filter(alertas);
     $("#confTabela").innerHTML = ps.length
       ? `<table><tr><th>Data</th><th>Tiquete</th><th>Cliente</th><th>Placa</th><th>Motorista</th><th>Entrada</th><th>Saída</th><th class="n">Líquido (kg)</th><th>O que conferir</th></tr>` +
-        ps.map(p => `<tr><td>${br(p.data)}</td><td>${p.ticket}</td><td>${esc(p.cliente)}</td><td>${esc(p.placa)}</td><td>${esc(p.motorista || "—")}</td><td>${brHora(p.entrada_em)}</td><td>${brHora(p.saida_em)}</td><td class="n">${kg(p.liquido_kg)}</td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") + "</table>"
+        ps.map(p => `<tr><td>${br(p.data)}</td><td>${p.ticket}</td><td>${esc(p.cliente)}</td><td>${esc(p.placa)}</td><td>${esc(p.motorista || "—")}</td><td>${brHora(p.entrada_em)}</td><td>${brHora(p.saida_em)}</td><td class="n">${liqTxt(p)}</td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") + "</table>"
       : '<div class="vazio">Nada a conferir nesse período.</div>';
   } catch (e) { $("#confTabela").innerHTML = `<div class="msg erro">${erroTxt(e)}</div>`; }
 }
@@ -1035,7 +1045,7 @@ $("#btExcel").addEventListener("click", async () => {
   const tot = validas.reduce((s, x) => s + x.liquido_kg, 0);
   for (const [nome, k] of [["Resumo por cliente", "periodo"], ["Total por dia", "dia"], ["Por dia e cliente", "diacliente"], ["Semanal por cliente", "semana"], ["Mensal por cliente", "mes"]]) {
     const v = VISOES[k], ls = agrupar(validas, v.chave);
-    const ws = aba(nome, [...v.cols, "Carradas", "Toneladas", "% do total"], ls.map(l => [...l.v, l.carradas, t(l.kg), l.kg / tot]), [14, 30, 22, 12, 14, 12]);
+    const ws = aba(nome, [...v.cols, "Carradas", "Toneladas", "% do total"], ls.map(l => [...l.v, l.carradas, l.pesadas ? t(l.kg) : "por carrada", l.pesadas ? l.kg / (tot || 1) : ""]), [14, 30, 22, 12, 14, 12]);
     const r = ws.addRow([...v.cols.map((_, i) => i ? "" : "TOTAL"), validas.length, t(tot), 1]);
     r.eachCell(c => { c.fill = azul; c.font = { bold: true, color: { argb: "FFFFFFFF" } }; });
     ws.getColumn(v.cols.length + 2).numFmt = "#,##0.000"; ws.getColumn(v.cols.length + 3).numFmt = "0.0%";
@@ -1047,7 +1057,7 @@ $("#btExcel").addEventListener("click", async () => {
     const pd = atual.filter(p => p.data === d);
     for (const c of [...new Set(pd.map(p => p.cliente))].sort()) {
       const pc = pd.filter(p => p.cliente === c);
-      for (const p of pc) ws.addRow([p.ticket, p.placa, p.produto || p.produto_balanca, p.cliente, p.transportador, p.motorista, p.nota, p.operador_entrada, p.peso_entrada_kg, brHora(p.entrada_em), p.operador_saida, p.peso_saida_kg, brHora(p.saida_em), p.liquido_kg, p.situacao, p.situacao === "cancelada" ? p.motivo_cancelamento : alertas(p), p.arquivo_nome, p.sha256]);
+      for (const p of pc) ws.addRow([p.ticket, p.placa, p.produto || p.produto_balanca, p.cliente, p.transportador, p.motorista, p.nota, p.operador_entrada, p.peso_entrada_kg, brHora(p.entrada_em), p.operador_saida, p.peso_saida_kg, brHora(p.saida_em), p.por_carrada ? "por carrada" : p.liquido_kg, p.situacao, p.situacao === "cancelada" ? p.motivo_cancelamento : alertas(p), p.arquivo_nome, p.sha256]);
       const v = pc.filter(p => p.situacao === "valida");
       ws.addRow([`${v.length} carradas`, "", "", `Subtotal ${c} · ${br(d)}`, "", "", "", "", "", "", "", "", "", v.reduce((s, p) => s + p.liquido_kg, 0)]).eachCell(x => { x.fill = azul2; x.font = { bold: true }; });
     }
@@ -1059,7 +1069,7 @@ $("#btExcel").addEventListener("click", async () => {
   const conf = validas.filter(alertas);
   if (papel === "admin") {
   const wc = aba("A conferir", ["Data", "Tiquete", "Cliente", "Placa", "Motorista", "Entrada", "Saída", "Peso Líquido (kg)", "O que conferir"],
-    conf.map(p => [br(p.data), p.ticket, p.cliente, p.placa, p.motorista, brHora(p.entrada_em), brHora(p.saida_em), p.liquido_kg, alertas(p)]), [11, 10, 26, 10, 14, 17, 17, 14, 45]);
+    conf.map(p => [br(p.data), p.ticket, p.cliente, p.placa, p.motorista, brHora(p.entrada_em), brHora(p.saida_em), p.por_carrada ? "por carrada" : p.liquido_kg, alertas(p)]), [11, 10, 26, 10, 14, 17, 17, 14, 45]);
   wc.eachRow((r, i) => { if (i > 1) r.eachCell(c => c.fill = amarelo); });
   }
   const buf = await wb.xlsx.writeBuffer();
@@ -1106,7 +1116,8 @@ function paginaComprovante(doc, ps, cad, periodo) {
   // caixas de resumo
   const prods = [...new Set(ps.map(p => p.produto || p.produto_balanca))].join(", ");
   const caixas = [["CLIENTE", cad?.cpf_cnpj ? `${cliente}` : cliente, 0.24], ["PERÍODO", umDia ? br(de) : `${br(de)} a ${br(ate)}`, 0.2],
-                  ["PRODUTO", prods, 0.2], ["CARRADAS", String(ps.length), 0.1], ["TOTAL RETIRADO", ton(total) + " t", 0.26]];
+                  ["PRODUTO", prods, 0.2], ["CARRADAS", String(ps.length), 0.1],
+                  ["TOTAL RETIRADO", ps.every(p => p.por_carrada) ? `${ps.length} carrada${ps.length > 1 ? "s" : ""}` : ton(total) + " t", 0.26]];
   let x = M; const larg = W - 2 * M;
   for (const [rot, val, f] of caixas) {
     const w = larg * f, destaque = rot === "TOTAL RETIRADO";
@@ -1118,11 +1129,12 @@ function paginaComprovante(doc, ps, cad, periodo) {
     x += w;
   }
   if (cad?.cpf_cnpj) { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(80); doc.text(`CPF/CNPJ ${cad.cpf_cnpj}`, M + 2.5, 50); }
+  if (ps.some(p => p.por_carrada) && !ps.every(p => p.por_carrada)) { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(80); doc.text(barroTxt(ps).replace(" + ", "mais ") + " (por carrada)", M + larg * 0.74 + 2.5, 50); }
   doc.autoTable({
     startY: 55, margin: { left: M, right: M, bottom: 14 },
     head: [["#", "Tiquete", "Placa", "Motorista", "Produto", "Nº Nota", "Entrada", "Saída", "Tara (kg)", "Bruto (kg)", "Líquido (kg)"]],
-    body: ps.map((p, i) => [i + 1, p.ticket, p.placa, p.motorista || "não informado", p.produto || p.produto_balanca, p.nota || "—", brHora(p.entrada_em), brHora(p.saida_em), kg(p.peso_entrada_kg), kg(p.peso_saida_kg), kg(p.liquido_kg)]),
-    foot: [["", "TOTAL", `${ps.length} carradas`, "", "", "", "", "", kg(ps.reduce((s, p) => s + p.peso_entrada_kg, 0)), kg(ps.reduce((s, p) => s + p.peso_saida_kg, 0)), kg(total)]],
+    body: ps.map((p, i) => [i + 1, p.ticket, p.placa, p.motorista || "não informado", p.produto || p.produto_balanca, p.nota || "—", brHora(p.entrada_em), brHora(p.saida_em), p.por_carrada ? "—" : kg(p.peso_entrada_kg), p.por_carrada ? "—" : kg(p.peso_saida_kg), liqTxt(p)]),
+    foot: [["", "TOTAL", `${ps.length} carradas`, "", "", "", "", "", kg(ps.filter(p => !p.por_carrada).reduce((s, p) => s + p.peso_entrada_kg, 0)), kg(ps.filter(p => !p.por_carrada).reduce((s, p) => s + p.peso_saida_kg, 0)), kg(total)]],
     styles: { fontSize: 7.5, cellPadding: 1.6 }, headStyles: { fillColor: azul, textColor: 255 },
     footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" },
     alternateRowStyles: { fillColor: [244, 245, 247] },
@@ -1181,7 +1193,7 @@ async function carregarEnvio() {
       const u = c.ultimo, mudou = c.enviado && (c.enviado.carradas !== c.ps.length || c.enviado.total_kg !== c.kg);
       const sit = u ? `${SITUACAO[u.tipo]} em ${new Date(u.registrado_em).toLocaleString("pt-BR")}${u.observacao ? ` (${esc(u.observacao)})` : ""}` : "não enviado";
       return `<tr><td>${esc(c.cliente)}</td><td>${esc(c.cad?.telefone || "")}${foneWhats(c.cad?.telefone) ? "" : ' <span class="alerta">sem telefone válido</span>'}</td>` +
-        `<td class="n">${c.ps.length}</td><td class="n">${ton(c.kg)}</td>` +
+        `<td class="n">${c.ps.length}</td><td class="n">${c.ps.every(p => p.por_carrada) ? "por carrada" : ton(c.kg) + barroTxt(c.ps)}</td>` +
         `<td>${sit}${mudou ? ' <span class="alerta">os números mudaram depois do envio; envie de novo</span>' : ""}</td>` +
         `<td><button class="mini" data-enviar="${i}">Enviar</button> <button class="mini" data-registrar="${i}" data-tipo="de_acordo">De acordo</button> <button class="mini" data-registrar="${i}" data-tipo="contestado">Contestou</button></td></tr>`;
     }).join("") + "</table>";
@@ -1198,7 +1210,7 @@ $("#tabEnvio").addEventListener("click", async e => {
     if (b.dataset.enviar) {
       const periodo = de === ate ? `do dia ${br(de)}` : `de ${br(de)} a ${br(ate)}`;
       const texto = `Olá! Aqui é da Geolux Mineradora. Segue o extrato das retiradas de ${c.cad?.nome || c.cliente} ${periodo}: ` +
-        `${c.ps.length} carradas, total de ${ton(c.kg)} t. No PDF em anexo está cada carrada, com tiquete, placa, motorista e pesos da balança. ` +
+        `${c.ps.length} carradas, ${c.ps.every(p => p.por_carrada) ? "de barro" : `total de ${ton(c.kg)} t${barroTxt(c.ps)}`}. No PDF em anexo está cada carrada, com tiquete, placa, motorista e pesos da balança. ` +
         `Pode confirmar se está de acordo? Se algo não conferir, por favor nos avise.`;
       const fone = foneWhats(c.cad?.telefone);
       window.open(`https://wa.me/${fone}?text=${encodeURIComponent(texto)}`, "_blank");
@@ -1352,7 +1364,8 @@ async function carregarPainel() {
     ["Total no período", ton(kgT) + " t", delta(kgT, kgA)],
     ["Carradas", ps.length, `período anterior: ${ant.length}`],
     ["Média por dia com movimento", diasMov ? ton(kgT / diasMov) + " t" : "—", `${diasMov} dia(s) com carradas`],
-    ["Média por carrada", ps.length ? ton(kgT / ps.length) + " t" : "—", ""],
+    ["Média por carrada", ps.some(x => !x.por_carrada) ? ton(kgT / ps.filter(x => !x.por_carrada).length) + " t" : "—", ps.some(x => x.por_carrada) ? "sem contar o barro" : ""],
+    ...(ps.some(x => x.por_carrada) ? [["Barro (por carrada)", ps.filter(x => x.por_carrada).length, `período anterior: ${ant.filter(x => x.por_carrada).length}`]] : []),
     ...(cliSel ? [] : [["Clientes atendidos", new Set(ps.map(x => x.cliente)).size, `período anterior: ${new Set(ant.map(x => x.cliente)).size}`]])]
     .map(([t, v, d]) => `<div class="kpi"><small>${t}</small><b>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
 
@@ -1396,12 +1409,12 @@ async function carregarPainel() {
   $("#pClientes").innerHTML = !g.length ? '<div class="vazio">—</div>' :
     `<table><tr><th>Cliente</th><th class="n">Carradas</th><th class="n">Toneladas</th><th style="width:22%"></th><th class="n">%</th><th>Retiradas</th><th class="n">Período anterior</th><th></th></tr>` +
     g.map(l => { const a = antPor.get(l.id) || 0, sel = l.id === cliSel;
-      return `<tr data-pcliente="${esc(l.id)}" style="cursor:pointer${sel ? ";outline:2px solid var(--azul)" : ""}"><td>${esc(l.id)}</td><td class="n">${l.carradas}</td><td class="n"><b>${ton(l.kg)}</b></td><td><div class="barra" style="width:${Math.max(l.kg / maior * 100, 1)}%"></div></td><td class="n">${(l.kg / kgTodos * 100).toFixed(1).replace(".", ",")}%</td><td>${datas(l.id)}</td><td class="n">${a ? ton(a) + " t" : "—"}</td><td><button class="mini" data-ppdf="${esc(l.id)}">PDF</button></td></tr>`; }).join("") +
+      return `<tr data-pcliente="${esc(l.id)}" style="cursor:pointer${sel ? ";outline:2px solid var(--azul)" : ""}"><td>${esc(l.id)}</td><td class="n">${l.carradas}</td><td class="n"><b>${tonG(l)}</b></td><td><div class="barra" style="width:${Math.max(l.kg / maior * 100, 1)}%"></div></td><td class="n">${l.pesadas ? (l.kg / (kgTodos || 1) * 100).toFixed(1).replace(".", ",") + "%" : "—"}</td><td>${datas(l.id)}</td><td class="n">${a ? ton(a) + " t" : "—"}</td><td><button class="mini" data-ppdf="${esc(l.id)}">PDF</button></td></tr>`; }).join("") +
     `<tr class="dia"><td>TOTAL GERAL</td><td class="n">${todos.length}</td><td class="n">${ton(kgTodos)}</td><td></td><td class="n">100%</td><td></td><td class="n">${ton(todosAnt.reduce((s, x) => s + x.liquido_kg, 0))} t</td><td></td></tr></table>`;
   const gp = agrupar(ps, x => ({ id: x.produto || x.produto_balanca, v: [] })).sort((p, q) => q.kg - p.kg);
   $("#pProdutos").innerHTML = !gp.length ? '<div class="vazio">—</div>' :
     `<table><tr><th>Produto</th><th class="n">Carradas</th><th class="n">Toneladas</th><th class="n">%</th></tr>` +
-    gp.map(l => `<tr><td>${esc(l.id)}</td><td class="n">${l.carradas}</td><td class="n">${ton(l.kg)}</td><td class="n">${(l.kg / kgT * 100).toFixed(1).replace(".", ",")}%</td></tr>`).join("") +
+    gp.map(l => `<tr><td>${esc(l.id)}</td><td class="n">${l.carradas}</td><td class="n">${tonG(l)}</td><td class="n">${l.pesadas ? (l.kg / (kgT || 1) * 100).toFixed(1).replace(".", ",") + "%" : "—"}</td></tr>`).join("") +
     `<tr class="dia"><td>TOTAL</td><td class="n">${ps.length}</td><td class="n">${ton(kgT)}</td><td class="n">100%</td></tr></table>`;
 
   // atenção
