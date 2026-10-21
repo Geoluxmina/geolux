@@ -358,7 +358,7 @@
         </div>
         <div class="card">
           <h3 style="margin-top:0">Consumo por máquina</h3>
-          <p style="margin-top:0;color:var(--suave);font-size:13px">Da máquina que mais gastou (R$) para a que menos gastou. Clique numa máquina para ver só ela. L/h é calculado entre dois abastecimentos com tanque cheio; a variação compara com o período anterior de mesma duração.</p>
+          <p style="margin-top:0;color:var(--suave);font-size:13px">Da máquina que mais gastou (R$) para a que menos gastou. Clique numa máquina para ver só ela. L/h = litros colocados ÷ horas trabalhadas desde o abastecimento anterior; a variação compara com o período anterior de mesma duração.</p>
           <div class="tabela" id="dpMaquinas"></div>
         </div>
         <div class="card">
@@ -387,7 +387,6 @@
           <label>Foto do horímetro (opcional) <input type="file" id="daFoto" accept="image/*" capture="environment"></label>
           <label>Observação <input id="daObs"></label>
         </div>
-        <label class="check"><input type="checkbox" id="daCheio" checked> Completou o tanque (encheu até a boca)</label>
         <p id="daInfo" style="color:var(--suave);font-size:13px;margin:0 0 10px"></p>
         <button class="bt" id="btAbastecer">Salvar abastecimento</button>
         <div id="daMsg"></div>
@@ -1479,23 +1478,22 @@ function saldoCarga(c) {
            diferenca: c.situacao === "fechada" && c.sobra_l != null ? restante - Number(c.sobra_l) : null };
 }
 
-// L/h entre abastecimentos de tanque cheio: litros colocados desde o último "cheio" ÷ horas entre os dois
+// L/h por quantidade inserida: litros colocados ÷ horas trabalhadas desde o abastecimento anterior
 function calcularConsumo() {
+  // por quantidade inserida: os litros de cada abastecimento repõem o que a máquina gastou desde o abastecimento anterior
   const porMaq = new Map(), preco = new Map(dz.cargas.map(c => [c.id, saldoCarga(c).precoL]));
   for (const a of dz.abs.filter(a => a.situacao === "valida").sort((x, y) => x.abastecido_em < y.abastecido_em ? -1 : 1)) {
-    const m = porMaq.get(a.maquina_id) || { cheio: null, acum: 0, ant: null };
-    a.horas = m.ant ? Number(a.horimetro) - Number(m.ant.horimetro) : null;
+    const lista = porMaq.get(a.maquina_id) || [], ant = lista[lista.length - 1];
+    a.horas = ant ? Number(a.horimetro) - Number(ant.horimetro) : null;
     a.custo = preco.get(a.carga_id) != null ? preco.get(a.carga_id) * Number(a.litros) : null;
-    a.lh = null;
-    if (m.cheio) {
-      m.acum += Number(a.litros);
-      if (a.tanque_cheio) {
-        const h = Number(a.horimetro) - Number(m.cheio.horimetro);
-        if (h > 0) { a.lh = m.acum / h; a.horasCiclo = h; a.litrosCiclo = m.acum; }
-      }
+    a.lh = null; a.lhJanela = null;
+    if (a.horas > 0) {
+      a.lh = Number(a.litros) / a.horas; a.horasCiclo = a.horas; a.litrosCiclo = Number(a.litros);
+      // para o alerta, junta os 3 últimos abastecimentos: um dia que colocou menos e outro mais não vira alarme falso
+      const jan = [...lista, a].filter(x => x.lh != null).slice(-3);
+      if (jan.length === 3) a.lhJanela = jan.reduce((t, x) => t + x.litrosCiclo, 0) / jan.reduce((t, x) => t + x.horasCiclo, 0);
     }
-    if (a.tanque_cheio) { m.cheio = a; m.acum = 0; }
-    m.ant = a; porMaq.set(a.maquina_id, m);
+    lista.push(a); porMaq.set(a.maquina_id, lista);
   }
   // média geral de cada máquina, para apontar desvio
   for (const maq of dz.maquinas) {
@@ -1506,7 +1504,7 @@ function calcularConsumo() {
   }
   for (const a of dz.abs) {
     const media = dz.maquinas.find(m => m.id === a.maquina_id)?.media;
-    a.desvio = a.lh != null && media ? (a.lh - media) / media : null;
+    a.desvio = a.lhJanela != null && media ? (a.lhJanela - media) / media : null;
   }
 }
 
@@ -1606,7 +1604,7 @@ function infoMaquina() {
   const m = dz.maquinas.find(x => String(x.id) === $("#daMaquina").value);
   $("#daHoriLbl").textContent = m?.medida === "km" ? "Hodômetro atual (km)" : "Horímetro atual (horas)";
   $("#daInfo").innerHTML = !m ? "" : m.ultimo
-    ? `Último abastecimento: <b>${lit(m.ultimo.horimetro)} ${unid(m)}</b> em ${dataHora(m.ultimo.abastecido_em)}, ${lit(m.ultimo.litros)} L${m.ultimo.tanque_cheio ? ", tanque cheio" : ""}.` +
+    ? `Último abastecimento: <b>${lit(m.ultimo.horimetro)} ${unid(m)}</b> em ${dataHora(m.ultimo.abastecido_em)}, ${lit(m.ultimo.litros)} L.` +
       (m.media ? ` Média desta máquina: <b>${lit(m.media)} L/${unid(m)}</b>.` : "")
     : "Primeiro abastecimento desta máquina: ele serve de ponto de partida; o consumo aparece a partir do próximo.";
 }
@@ -1625,7 +1623,7 @@ function mostrarPendenciasDiesel() {
   const limite = Date.now() - 30 * 86400000;
   for (const a of dz.abs.filter(a => a.desvio != null && Math.abs(a.desvio) > 0.3 && new Date(a.abastecido_em) > limite)) {
     const m = dz.maquinas.find(x => x.id === a.maquina_id);
-    al.push(`<b>${esc(m?.nome)}</b> em ${dataHora(a.abastecido_em)}: ${lit(a.lh)} L/${unid(m)}, ${Math.round(Math.abs(a.desvio) * 100)}% ${a.desvio > 0 ? "acima" : "abaixo"} da média (${lit(m?.media)}). Confira horímetro e litros.`);
+    al.push(`<b>${esc(m?.nome)}</b> em ${dataHora(a.abastecido_em)}: ${lit(a.lh)} L/${unid(m)}, nos 3 últimos abastecimentos ficou ${Math.round(Math.abs(a.desvio) * 100)}% ${a.desvio > 0 ? "acima" : "abaixo"} da média (${lit(m?.media)}). Confira horímetro e litros.`);
   }
   $("#dPend").innerHTML = al.length ? `<div class="card"><h3 style="margin-top:0">Atenção no diesel</h3>${al.map(t => `<div class="msg aviso">${t}</div>`).join("")}</div>` : "";
 }
@@ -1652,11 +1650,11 @@ function mostrarAbastecimentos() {
     .sort((x, y) => x.abastecido_em < y.abastecido_em ? 1 : -1).slice(0, 200);
   const cod = new Map(dz.cargas.map(c => [c.id, c.codigo])), maq = new Map(dz.maquinas.map(m => [m.id, m]));
   $("#tabAbast").innerHTML = !lista.length ? '<div class="vazio">Nenhum abastecimento.</div>' :
-    `<table><tr><th>Data</th><th>Máquina</th><th>Carga</th><th class="n">Horímetro</th><th class="n">Trabalhou</th><th class="n">Litros</th><th>Tanque</th><th class="n">Consumo</th><th class="n">Custo</th><th>Operador</th><th>Observação</th><th></th></tr>` +
+    `<table><tr><th>Data</th><th>Máquina</th><th>Carga</th><th class="n">Horímetro</th><th class="n">Trabalhou</th><th class="n">Litros</th><th class="n">Consumo</th><th class="n">Custo</th><th>Operador</th><th>Observação</th><th></th></tr>` +
     lista.map(a => {
       const m = maq.get(a.maquina_id), u = unid(m);
       const cons = a.lh != null ? `${lit(a.lh)} L/${u}` + (a.desvio != null && Math.abs(a.desvio) > 0.3 ? ` <span class="alerta">(${a.desvio > 0 ? "+" : ""}${Math.round(a.desvio * 100)}%)</span>` : "") : "—";
-      return `<tr><td>${dataHora(a.abastecido_em)}</td><td>${esc(m?.nome)}</td><td>${esc(cod.get(a.carga_id))}</td><td class="n">${lit(a.horimetro)} ${u}</td><td class="n">${a.horas != null ? lit(a.horas) + " " + u : "—"}</td><td class="n"><b>${lit(a.litros)}</b></td><td>${a.tanque_cheio ? "cheio" : "parcial"}</td><td class="n">${cons}</td><td class="n">${real(a.custo)}</td><td>${esc(a.operador || "—")}</td><td>${esc(a.observacao || "")}</td>` +
+      return `<tr><td>${dataHora(a.abastecido_em)}</td><td>${esc(m?.nome)}</td><td>${esc(cod.get(a.carga_id))}</td><td class="n">${lit(a.horimetro)} ${u}</td><td class="n">${a.horas != null ? lit(a.horas) + " " + u : "—"}</td><td class="n"><b>${lit(a.litros)}</b></td><td class="n">${cons}</td><td class="n">${real(a.custo)}</td><td>${esc(a.operador || "—")}</td><td>${esc(a.observacao || "")}</td>` +
         `<td>${a.pendente ? '<span class="alerta">guardado no celular</span>' : `${a.foto_caminho ? `<button class="mini" data-dfoto="${esc(a.foto_caminho)}">Foto</button> ` : ""}<button class="mini" data-dcancelar-abast="${a.id}">Cancelar</button>`}</td></tr>`;
     }).join("") + "</table>";
 }
@@ -1669,7 +1667,7 @@ function mostrarMaquinas() {
 }
 
 // ------------------------------------------------------------------ painel do diesel
-// números de um conjunto de abastecimentos: litros, custo, horas e L/h (só ciclos de tanque cheio)
+// números de um conjunto de abastecimentos: litros, custo, horas e L/h (por quantidade inserida)
 function resumoDiesel(as) {
   const ciclos = as.filter(a => a.lh != null);
   const hC = ciclos.reduce((s, a) => s + a.horasCiclo, 0), lC = ciclos.reduce((s, a) => s + a.litrosCiclo, 0);
@@ -1712,7 +1710,7 @@ async function mostrarPainelDiesel() {
     ["Diesel abastecido", lit(r.litros) + " L", delta(r.litros, rA.litros, v => lit(v) + " L")],
     ["Custo do diesel", real(r.custo), delta(r.custo, rA.custo, real)],
     ["Horas trabalhadas", r.horas ? lit(r.horas) + " h" : "—", delta(r.horas, rA.horas, v => lit(v) + " h")],
-    ["Consumo médio", r.lh ? lit(r.lh) + " L/h" : "—", r.lh && rA.lh ? delta(r.lh, rA.lh, v => lit(v) + " L/h", true) : "precisa de 2 abastecimentos de tanque cheio"],
+    ["Consumo médio", r.lh ? lit(r.lh) + " L/h" : "—", r.lh && rA.lh ? delta(r.lh, rA.lh, v => lit(v) + " L/h", true) : r.lh ? "sem dado no período anterior" : "precisa de 2 abastecimentos da máquina"],
     ["Custo por hora", r.horas ? real(r.custo / r.horas) : "—", r.horas && rA.horas ? delta(r.custo / r.horas, rA.custo / rA.horas, real, true) : ""],
   ];
   if (papel === "admin" && !maqSel && navigator.onLine) {
@@ -1781,7 +1779,7 @@ async function mostrarPainelDiesel() {
       else achados.push(["", `<b>${esc(m.nome)}</b>: consumo estável (${lit(x.lh)} L/${u}, ${fmtPct(p)}).`]);
     } else if (x.n && !a.n) achados.push(["", `<b>${esc(m.nome)}</b>: sem abastecimento no período anterior para comparar.`]);
     else if (!x.n && a.n) achados.push(["", `<b>${esc(m.nome)}</b>: nenhum abastecimento neste período (no anterior foram ${lit(a.litros)} L).`]);
-    else if (!x.lh) achados.push(["", `<b>${esc(m.nome)}</b>: ${lit(x.litros)} L, mas ainda sem dois abastecimentos de tanque cheio para calcular o L/h.`]);
+    else if (!x.lh) achados.push(["", `<b>${esc(m.nome)}</b>: ${lit(x.litros)} L, mas ainda sem dois abastecimentos com horímetro para calcular o L/h.`]);
   }
   $("#dpVariacao").innerHTML = achados.length ? achados.map(([t, h]) => `<div class="msg ${t}" style="${t ? "" : "background:var(--cinza)"}">${h}</div>`).join("") : '<div class="vazio">—</div>';
   // a "vilã": quem mais gastou em R$, e a categoria que mais gastou
@@ -1813,7 +1811,7 @@ async function mostrarPainelDiesel() {
   const linhasMes = maqsMes.map(m => ({ m, v: meses.map(mes => lhMes(m, mes)) })).filter(l => l.v.some(v => v != null));
   painelDiesel.meses = meses; painelDiesel.linhasMes = linhasMes;
   const nomeMes = mes => ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][Number(mes.slice(5)) - 1] + "/" + mes.slice(2, 4);
-  $("#dpMeses").innerHTML = !linhasMes.length ? '<div class="vazio">Ainda sem consumo calculado (precisa de dois abastecimentos de tanque cheio).</div>' :
+  $("#dpMeses").innerHTML = !linhasMes.length ? '<div class="vazio">Ainda sem consumo calculado (precisa de dois abastecimentos de cada máquina).</div>' :
     `<table><tr><th>Máquina</th>${meses.map(mes => `<th class="n">${nomeMes(mes)}</th>`).join("")}<th class="n">Tendência</th></tr>` +
     linhasMes.map(({ m, v }) => {
       const comDado = v.filter(x => x != null), p = comDado.length >= 2 ? pct(comDado[comDado.length - 1], comDado[comDado.length - 2]) : null;
@@ -1825,9 +1823,9 @@ async function mostrarPainelDiesel() {
   $("#dpTitAbast").textContent = nomeMaq ? `Abastecimentos de ${nomeMaq} no período` : "Abastecimentos do período";
   const lista = per.slice().sort((x, y) => x.abastecido_em < y.abastecido_em ? 1 : -1);
   $("#dpAbast").innerHTML = !lista.length ? '<div class="vazio">Nenhum abastecimento no período.</div>' :
-    `<table><tr><th>Data</th><th>Máquina</th><th>Carga</th><th class="n">Horímetro</th><th class="n">Trabalhou</th><th class="n">Litros</th><th>Tanque</th><th class="n">Consumo</th><th class="n">Custo</th><th>Operador</th></tr>` +
+    `<table><tr><th>Data</th><th>Máquina</th><th>Carga</th><th class="n">Horímetro</th><th class="n">Trabalhou</th><th class="n">Litros</th><th class="n">Consumo</th><th class="n">Custo</th><th>Operador</th></tr>` +
     lista.map(a => { const m = maq.get(a.maquina_id), u = unid(m);
-      return `<tr><td>${dataHora(a.abastecido_em)}</td><td>${esc(m?.nome)}</td><td>${esc(cod.get(a.carga_id))}</td><td class="n">${lit(a.horimetro)} ${u}</td><td class="n">${a.horas != null ? lit(a.horas) + " " + u : "—"}</td><td class="n"><b>${lit(a.litros)}</b></td><td>${a.tanque_cheio ? "cheio" : "parcial"}</td><td class="n">${a.lh != null ? lit(a.lh) + " L/" + u : "—"}</td><td class="n">${real(a.custo)}</td><td>${esc(a.operador || "—")}</td></tr>`; }).join("") +
+      return `<tr><td>${dataHora(a.abastecido_em)}</td><td>${esc(m?.nome)}</td><td>${esc(cod.get(a.carga_id))}</td><td class="n">${lit(a.horimetro)} ${u}</td><td class="n">${a.horas != null ? lit(a.horas) + " " + u : "—"}</td><td class="n"><b>${lit(a.litros)}</b></td><td class="n">${a.lh != null ? lit(a.lh) + " L/" + u : "—"}</td><td class="n">${real(a.custo)}</td><td>${esc(a.operador || "—")}</td></tr>`; }).join("") +
     `<tr class="dia"><td>TOTAL</td><td></td><td></td><td></td><td class="n">${r.horas ? lit(r.horas) : ""}</td><td class="n">${lit(r.litros)}</td><td></td><td></td><td class="n">${real(r.custo)}</td><td></td></tr></table>`;
 }
 $("#dDe").addEventListener("change", () => { $("#dAtalho").value = ""; mostrarPainelDiesel(); });
@@ -1904,9 +1902,9 @@ $("#btRelDiesel").addEventListener("click", () => {
   if (P.per.length) {
     const maq = new Map(dz.maquinas.map(m => [m.id, m])), cod = new Map(dz.cargas.map(c => [c.id, c.codigo]));
     doc.addPage(); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text("Abastecimentos do período", M, 16);
-    doc.autoTable({ ...estilo, startY: 20, head: [["Data", "Máquina", "Carga", "Horímetro", "Trabalhou", "Litros", "Tanque", "Consumo", "Custo", "Operador"]],
+    doc.autoTable({ ...estilo, startY: 20, head: [["Data", "Máquina", "Carga", "Horímetro", "Trabalhou", "Litros", "Consumo", "Custo", "Operador"]],
       body: P.per.slice().sort((x, y) => x.abastecido_em < y.abastecido_em ? -1 : 1).map(a => { const m = maq.get(a.maquina_id), u = unid(m);
-        return [dataHora(a.abastecido_em), m?.nome || "", cod.get(a.carga_id) || "", lit(a.horimetro) + " " + u, a.horas != null ? lit(a.horas) + " " + u : "—", lit(a.litros), a.tanque_cheio ? "cheio" : "parcial", a.lh != null ? lit(a.lh) + " L/" + u : "—", real(a.custo), a.operador || "—"]; }),
+        return [dataHora(a.abastecido_em), m?.nome || "", cod.get(a.carga_id) || "", lit(a.horimetro) + " " + u, a.horas != null ? lit(a.horas) + " " + u : "—", lit(a.litros), a.lh != null ? lit(a.lh) + " L/" + u : "—", real(a.custo), a.operador || "—"]; }),
       foot: [["TOTAL", "", "", "", P.r.horas ? lit(P.r.horas) + " h" : "", lit(P.r.litros), "", "", real(P.r.custo), ""]],
       columnStyles: { 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right", fontStyle: "bold" }, 7: { halign: "right" }, 8: { halign: "right" } } });
   }
@@ -1930,7 +1928,7 @@ $("#btAbastecer").addEventListener("click", async () => {
       ? `Pela conta do sistema a carga ${carga.codigo} só tem ${lit(restante)} L, e você está lançando ${lit(litros)} L.\n\nSalvar assim mesmo?`
       : `Pela conta do sistema a carga ${carga.codigo} já acabou${restante < -0.5 ? ` (já passou ${lit(-restante)} L)` : ""}.\nSe chegou diesel novo, abra uma nova carga antes.\n\nSalvar nesta carga assim mesmo?`)) return;
   $("#btAbastecer").disabled = true; msg("#daMsg", "ok", "Salvando…");
-  const dados = { id_local: novoId(), carga_id: carga.id, maquina_id: m.id, abastecido_em: quando, horimetro: hori, litros, tanque_cheio: $("#daCheio").checked,
+  const dados = { id_local: novoId(), carga_id: carga.id, maquina_id: m.id, abastecido_em: quando, horimetro: hori, litros, tanque_cheio: false,
     operador: $("#daOperador").value.trim() || null, observacao: $("#daObs").value.trim() || null };
   const arquivo = $("#daFoto").files[0];
   let guardado = false;
@@ -1953,7 +1951,7 @@ $("#btAbastecer").addEventListener("click", async () => {
   }
   try {
     for (const id of ["#daHori", "#daLitros", "#daObs", "#daFoto"]) $(id).value = "";
-    $("#daQuando").value = agoraLocal(); $("#daCheio").checked = true;
+    $("#daQuando").value = agoraLocal();
     await carregarDiesel();
     const novo = dz.abs.filter(a => a.maquina_id === m.id && a.situacao === "valida").sort((x, y) => x.registrado_em < y.registrado_em ? 1 : -1)[0];
     const u = unid(m), media = dz.maquinas.find(x => x.id === m.id)?.media;
@@ -1961,6 +1959,7 @@ $("#btAbastecer").addEventListener("click", async () => {
     if (novo?.horas != null) t += ` Trabalhou ${lit(novo.horas)} ${u} desde o último abastecimento.`;
     if (novo?.lh != null) t += ` Consumo: <b>${lit(novo.lh)} L/${u}</b>.`;
     const desvio = novo?.desvio != null && Math.abs(novo.desvio) > 0.3;
+    if (novo?.desvio != null && desvio) t += ` Nos 3 últimos abastecimentos a média ficou em ${lit(novo.lhJanela)} L/${u}.`;
     if (guardado) t += " <b>Sem internet: ficou guardado neste celular e será enviado sozinho quando pegar sinal.</b>";
     msg("#daMsg", desvio ? "aviso" : "ok", t + (desvio ? ` Está ${Math.round(Math.abs(novo.desvio) * 100)}% ${novo.desvio > 0 ? "acima" : "abaixo"} da média da máquina (${lit(media)} L/${u}). Confira o horímetro e os litros.` : ""));
   } catch (e) { msg("#daMsg", "erro", "Não foi salvo. " + erroTxt(e)); }
