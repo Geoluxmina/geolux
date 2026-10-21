@@ -398,12 +398,21 @@
             <label>Data e hora da retirada <input type="datetime-local" id="dcQuando"></label>
             <label>Fornecedor / posto <input id="dcFornecedor" list="dcFornecedores"></label><datalist id="dcFornecedores"></datalist>
             <label>Litros retirados <input type="number" step="0.1" min="0" inputmode="decimal" id="dcLitros"></label>
-            <label>Valor total (R$) <input type="number" step="0.01" min="0" inputmode="decimal" id="dcValor"></label>
-            <label>Foto ou PDF da nota <input type="file" id="dcFoto" accept="image/*,application/pdf"></label>
+            <label>Valor total (R$) · em branco se for pagar depois <input type="number" step="0.01" min="0" inputmode="decimal" id="dcValor"></label>
+            <label>Foto do recibo ou da nota <input type="file" id="dcFoto" accept="image/*,application/pdf"></label>
             <label>Observação <input id="dcObs"></label>
           </div>
           <p style="color:var(--suave);font-size:13px">O código da carga (DIE-ano-mês-número) é criado pelo sistema. Se a última carga fechou com sobra medida, a sobra entra sozinha como saldo desta.</p>
           <button class="bt" id="btCarga">Abrir carga</button>
+        </details>
+        <details id="dnBox" data-admin><summary><b>Lançar nota / valor de carga paga depois</b></summary>
+          <div class="linha">
+            <label>Carga <select id="dnCarga"></select></label>
+            <label>Valor total da nota (R$) <input type="number" step="0.01" min="0" inputmode="decimal" id="dnValor"></label>
+            <label>Nota fiscal (foto ou PDF) <input type="file" id="dnNota" accept="image/*,application/pdf"></label>
+          </div>
+          <p style="color:var(--suave);font-size:13px">Use quando o diesel foi retirado só com o recibo e a nota chegou depois. Vale também para carga já fechada; o custo dos abastecimentos dela passa a aparecer no painel.</p>
+          <button class="bt" id="btNota">Salvar nota</button>
         </details>
         <div id="dcMsg"></div>
         <div class="tabela" id="tabCargas"></div>
@@ -1620,6 +1629,10 @@ function mostrarPendenciasDiesel() {
     if (c.situacao === "fechada" && s.diferenca != null && s.diferenca > Math.max(2, 0.02 * s.disponivel)) al.push(`<b>${esc(c.codigo)}</b>: <b>${lit(s.diferenca)} L sem abastecimento registrado</b> (retirado ${lit(s.disponivel)} L, abastecido ${lit(s.usado)} L, sobra ${lit(c.sobra_l)} L).`);
     if (c.situacao === "fechada" && s.diferenca != null && -s.diferenca > Math.max(2, 0.02 * s.disponivel)) al.push(`<b>${esc(c.codigo)}</b>: sobrou <b>${lit(-s.diferenca)} L a mais</b> do que a conta do sistema. Algum abastecimento pode ter sido lançado com litros a mais.`);
   }
+  if (papel === "admin") {
+    const sem = dz.cargas.filter(c => c.situacao !== "cancelada" && c.valor_total == null);
+    if (sem.length) al.push(`${sem.length === 1 ? "A carga" : "As cargas"} <b>${sem.map(c => esc(c.codigo)).join(", ")}</b> (${lit(sem.reduce((t, c) => t + Number(c.litros), 0))} L) ${sem.length === 1 ? "está" : "estão"} sem valor. O custo desses litros fica fora do painel até lançar a nota em Cargas de diesel.`);
+  }
   const limite = Date.now() - 30 * 86400000;
   for (const a of dz.abs.filter(a => a.desvio != null && Math.abs(a.desvio) > 0.3 && new Date(a.abastecido_em) > limite)) {
     const m = dz.maquinas.find(x => x.id === a.maquina_id);
@@ -1630,6 +1643,9 @@ function mostrarPendenciasDiesel() {
 
 function mostrarCargas() {
   const lista = dz.cargas.filter(c => c.situacao !== "cancelada").slice().reverse();
+  const nSel = $("#dnCarga").value, semValor = lista.filter(c => c.valor_total == null), comValor = lista.filter(c => c.valor_total != null);
+  $("#dnCarga").innerHTML = '<option value="">— escolher —</option>' + [...semValor, ...comValor].map(c =>
+    `<option value="${c.id}" ${String(c.id) === nSel ? "selected" : ""}>${esc(c.codigo)} · ${lit(c.litros)} L · ${esc(c.fornecedor)}${c.valor_total == null ? " · sem valor" : ""}</option>`).join("");
   $("#tabCargas").innerHTML = !lista.length ? '<div class="vazio">Nenhuma carga lançada ainda.</div>' :
     `<table><tr><th>Código</th><th>Retirada</th><th>Fornecedor</th><th class="n">Litros</th><th class="n">Sobra anterior</th><th class="n">Abastecido</th><th class="n">Restante</th><th class="n">Valor</th><th class="n">R$/L</th><th>Situação</th><th></th></tr>` +
     lista.map(c => {
@@ -1637,10 +1653,12 @@ function mostrarCargas() {
       const sit = c.situacao === "aberta" ? "aberta"
         : c.sobra_l == null ? `fechada, <span class="alerta">sobra não medida (${lit(s.restante)} L em aberto)</span>`
         : `fechada, sobra ${lit(c.sobra_l)} L` + (Math.abs(s.diferenca) > 0.5 ? ` <span class="alerta">(diferença ${lit(s.diferenca)} L)</span>` : " ✓");
-      const bts = [c.comprovante_caminho ? `<button class="mini" data-dfoto="${esc(c.comprovante_caminho)}">Ver nota</button>` : '<span class="alerta">sem nota</span>',
+      const bts = [c.comprovante_caminho ? `<button class="mini" data-dfoto="${esc(c.comprovante_caminho)}">Ver recibo</button>` : '<span class="alerta">sem recibo</span>',
+        c.nota_caminho ? `<button class="mini" data-dfoto="${esc(c.nota_caminho)}">Ver nota</button>` : "",
+        papel === "admin" && (c.valor_total == null || !c.nota_caminho) ? `<button class="mini" data-dnota="${c.id}">Lançar nota</button>` : "",
         c.situacao === "aberta" ? `<button class="mini" data-dfechar="${c.id}">Fechar carga</button>` : "",
         `<button class="mini" data-dcancelar-carga="${c.id}" data-codigo="${esc(c.codigo)}">Cancelar</button>`].join(" ");
-      return `<tr><td><b>${esc(c.codigo)}</b></td><td>${dataHora(c.retirado_em)}</td><td>${esc(c.fornecedor)}</td><td class="n">${lit(c.litros)}</td><td class="n">${Number(c.saldo_anterior_l) ? lit(c.saldo_anterior_l) : "—"}</td><td class="n">${lit(s.usado)}</td><td class="n"><b>${lit(s.restante)}</b></td><td class="n">${real(c.valor_total)}</td><td class="n">${s.precoL ? s.precoL.toFixed(2).replace(".", ",") : "—"}</td><td>${sit}</td><td>${bts}</td></tr>`;
+      return `<tr><td><b>${esc(c.codigo)}</b></td><td>${dataHora(c.retirado_em)}</td><td>${esc(c.fornecedor)}</td><td class="n">${lit(c.litros)}</td><td class="n">${Number(c.saldo_anterior_l) ? lit(c.saldo_anterior_l) : "—"}</td><td class="n">${lit(s.usado)}</td><td class="n"><b>${lit(s.restante)}</b></td><td class="n">${c.valor_total == null ? '<span class="alerta">a lançar</span>' : real(c.valor_total)}</td><td class="n">${s.precoL ? s.precoL.toFixed(2).replace(".", ",") : "—"}</td><td>${sit}</td><td>${bts}</td></tr>`;
     }).join("") + "</table>";
 }
 
@@ -1672,7 +1690,8 @@ function resumoDiesel(as) {
   const ciclos = as.filter(a => a.lh != null);
   const hC = ciclos.reduce((s, a) => s + a.horasCiclo, 0), lC = ciclos.reduce((s, a) => s + a.litrosCiclo, 0);
   return { n: as.length, litros: as.reduce((s, a) => s + Number(a.litros), 0), custo: as.reduce((s, a) => s + (a.custo || 0), 0),
-           horas: as.reduce((s, a) => s + (a.horas || 0), 0), lh: hC ? lC / hC : null };
+           horas: as.reduce((s, a) => s + (a.horas || 0), 0), lh: hC ? lC / hC : null,
+           semValor: as.filter(a => a.custo == null).reduce((s, a) => s + Number(a.litros), 0) };
 }
 const pct = (v, b) => b ? (v / b - 1) * 100 : null;
 // quanto o aumento (ou a queda) do L/h custou no período: diferença de L/h × horas trabalhadas × preço médio pago
@@ -1708,7 +1727,7 @@ async function mostrarPainelDiesel() {
   const delta = (v, b, fmt, menorMelhor) => !b ? "sem dado no período anterior" : Math.abs(pct(v, b)) < 0.5 ? `igual ao anterior (${fmt(b)})` : `${v >= b ? "▲" : "▼"} ${Math.abs(pct(v, b)).toFixed(0)}% vs. anterior (${fmt(b)})` + (menorMelhor && v < b ? " · melhorou" : "");
   const kpis = [
     ["Diesel abastecido", lit(r.litros) + " L", delta(r.litros, rA.litros, v => lit(v) + " L")],
-    ["Custo do diesel", real(r.custo), delta(r.custo, rA.custo, real)],
+    ["Custo do diesel", real(r.custo), r.semValor ? `${lit(r.semValor)} L ainda sem valor (nota a lançar)` : delta(r.custo, rA.custo, real)],
     ["Horas trabalhadas", r.horas ? lit(r.horas) + " h" : "—", delta(r.horas, rA.horas, v => lit(v) + " h")],
     ["Consumo médio", r.lh ? lit(r.lh) + " L/h" : "—", r.lh && rA.lh ? delta(r.lh, rA.lh, v => lit(v) + " L/h", true) : r.lh ? "sem dado no período anterior" : "precisa de 2 abastecimentos da máquina"],
     ["Custo por hora", r.horas ? real(r.custo / r.horas) : "—", r.horas && rA.horas ? delta(r.custo / r.horas, rA.custo / rA.horas, real, true) : ""],
@@ -1791,12 +1810,13 @@ async function mostrarPainelDiesel() {
   const categorias = [...cats.values()].map(c => ({ ...c, r: resumoDiesel(c.per), a: resumoDiesel(c.ant) })).filter(c => c.r.n).sort((x, y) => y.r.custo - x.r.custo);
   const custoTot = categorias.reduce((t, c) => t + c.r.custo, 0) || 1;
   const vila = linhas.find(l => l.r.n), vilas = [];
-  if (vila) {
+  if (vila && vila.r.custo > 0) {
     const ex = excesso(vila.r, vila.a);
     vilas.push(`<b>${esc(vila.m.nome)}</b> foi a máquina que mais gastou: <b>${real(vila.r.custo)}</b> (${(vila.r.custo / custoTot * 100).toFixed(0)}% do diesel do período, ${lit(vila.r.litros)} L)` +
       (ex && ex.reais > 0 ? `. Comparado ao período anterior, consumiu cerca de <b>${real(ex.reais)} a mais</b> pelo aumento do L/h.` : "."));
   }
-  if (categorias.length > 1) vilas.push(`Categoria que mais gastou: <b>${esc(categorias[0].tipo)}</b>, ${real(categorias[0].r.custo)} (${(categorias[0].r.custo / custoTot * 100).toFixed(0)}% do total).`);
+  if (categorias.length > 1 && categorias[0].r.custo > 0) vilas.push(`Categoria que mais gastou: <b>${esc(categorias[0].tipo)}</b>, ${real(categorias[0].r.custo)} (${(categorias[0].r.custo / custoTot * 100).toFixed(0)}% do total).`);
+  if (r.semValor) vilas.unshift(`<b>${lit(r.semValor)} L</b> do período vieram de cargas ainda sem valor. Os valores em R$ estão incompletos até lançar a nota.`);
   $("#dpVila").innerHTML = vilas.map(v => `<div class="msg aviso">${v}</div>`).join("");
   $("#dpCategorias").innerHTML = !categorias.length ? '<div class="vazio">Nenhum abastecimento no período. Preencha o tipo de cada máquina em Máquinas.</div>' :
     `<table><tr><th>Categoria</th><th class="n">Máquinas</th><th class="n">Litros</th><th class="n">Trabalhou</th><th class="n">Consumo</th><th class="n">Período anterior</th><th class="n">Custo</th><th class="n">% do custo</th><th class="n">Custo por hora</th></tr>` +
@@ -1971,7 +1991,7 @@ $("#btCarga").addEventListener("click", async () => {
   if (!$("#dcQuando").value) return msg("#dcMsg", "erro", "Informe a data e hora da retirada.");
   if (!forn) return msg("#dcMsg", "erro", "Informe o fornecedor ou posto.");
   if (!litros || litros <= 0) return msg("#dcMsg", "erro", "Informe os litros retirados.");
-  if (!$("#dcFoto").files[0] && !confirm("Nenhuma foto da nota foi anexada. Abrir a carga sem a nota?")) return;
+  if (!$("#dcFoto").files[0] && !confirm("Nenhuma foto do recibo ou da nota foi anexada. Abrir a carga assim mesmo?")) return;
   $("#btCarga").disabled = true; msg("#dcMsg", "ok", "Salvando…");
   try {
     const foto = await enviarFotoDiesel("cargas", $("#dcFoto").files[0]);
@@ -1986,6 +2006,26 @@ $("#btCarga").addEventListener("click", async () => {
     msg("#dcMsg", "ok", `Carga <b>${esc(data.codigo)}</b> aberta com ${lit(litros)} L` + (Number(data.saldo_anterior_l) ? ` + ${lit(data.saldo_anterior_l)} L de sobra da carga anterior.` : "."));
   } catch (e) { msg("#dcMsg", "erro", semRede(e) ? "Sem internet: a carga precisa ser aberta com sinal (por exemplo, ainda no posto)." : "Não foi salva. " + erroTxt(e)); }
   $("#btCarga").disabled = false;
+});
+
+$("#btNota").addEventListener("click", async () => {
+  const id = Number($("#dnCarga").value), valor = $("#dnValor").value.trim() === "" ? null : numero($("#dnValor").value), f = $("#dnNota").files[0];
+  if (!id) return msg("#dcMsg", "erro", "Escolha a carga.");
+  if (valor == null && !f) return msg("#dcMsg", "erro", "Informe o valor ou anexe a nota.");
+  if (valor != null && (isNaN(valor) || valor < 0)) return msg("#dcMsg", "erro", "Valor inválido.");
+  $("#btNota").disabled = true; msg("#dcMsg", "ok", "Salvando…");
+  try {
+    const nota = await enviarFotoDiesel("notas", f);
+    const { error } = await db.rpc("lancar_nota_diesel", { p_id: id, p_valor: valor, p_nota: nota });
+    if (error) throw /lancar_nota_diesel|function/i.test(error.message) && /not find|does not exist|schema cache/i.test(error.message)
+      ? new Error("Falta rodar a query 012 no Supabase.") : error;
+    const c = dz.cargas.find(x => x.id === id);
+    for (const x of ["#dnValor", "#dnNota"]) $(x).value = "";
+    $("#dnBox").open = false;
+    await carregarDiesel();
+    msg("#dcMsg", "ok", `Nota da carga <b>${esc(c?.codigo)}</b> salva.` + (valor != null ? ` Valor ${real(valor)} (R$ ${(valor / Number(c?.litros)).toFixed(2).replace(".", ",")} por litro); o custo dos abastecimentos dela já aparece no painel.` : ""));
+  } catch (e) { msg("#dcMsg", "erro", "Não foi salva. " + erroTxt(e)); }
+  $("#btNota").disabled = false;
 });
 
 $("#btMaquina").addEventListener("click", async () => {
@@ -2008,6 +2048,7 @@ $("#aba-diesel").addEventListener("click", async e => {
     salvarJson(FILA, fila); await enviarFila(); return carregarDiesel();
   }
   if (d.dfoto) return abrirFotoDiesel(d.dfoto);
+  if (d.dnota) { $("#dnBox").open = true; $("#dnCarga").value = d.dnota; $("#dnBox").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
   if (d.dmaquina) {
     const { error } = await db.from("maquinas").update({ ativo: d.ativo !== "true" }).eq("id", d.dmaquina);
     if (error) msg("#dmMsg", "erro", erroTxt(error)); return carregarDiesel();
