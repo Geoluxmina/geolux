@@ -571,6 +571,7 @@
         <label>Local <select id="aLocal"></select></label>
         <button class="bt" id="btAlmox">Atualizar</button>
         <button class="bt sec" id="btAlmoxPdf">Estoque (PDF)</button>
+        <button class="bt sec" id="btAlmoxPorta">Folha da porta (PDF)</button>
       </div>
       <div class="kpis" id="aKpis" data-parte="estoque"></div>
       <div class="card" data-parte="estoque">
@@ -2952,6 +2953,51 @@ function pdfAlmox(contagem) {
   doc.save(`${contagem ? "contagem" : "estoque"}-almoxarifado-${iso(new Date())}.pdf`);
 }
 $("#btAlmoxPdf").addEventListener("click", () => pdfAlmox(false));
+// folha para pendurar na porta: o que tem e onde está (sem valores) + folha de retiradas para anotar à mão
+function pdfPorta() {
+  const lista = itensAtivos();
+  if (!lista.length) return msg("#aMsg", "erro", "Nenhum item cadastrado para imprimir.");
+  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
+  const azul = [31, 58, 95], W = 210, M = 12, hoje = new Date().toLocaleDateString("pt-BR");
+  const topo = (titulo, sub) => {
+    doc.addImage(LOGO, "PNG", M, 8, 49, 14);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(24); doc.setTextColor(...azul); doc.text(titulo, W - M, 17, { align: "right" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(90); doc.text(sub, W - M, 23, { align: "right" });
+    doc.setDrawColor(...azul); doc.setLineWidth(0.8); doc.line(M, 27, W - M, 27);
+  };
+  const rodape = () => { doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(130);
+    doc.text(`${EMPRESA} · folha atualizada em ${hoje}`, M, 289);
+    doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 289, { align: "right" }); };
+  topo("ALMOXARIFADO", `O que tem e onde está · atualizado em ${hoje}`);
+  doc.setFillColor(255, 242, 204); doc.roundedRect(M, 31, W - 2 * M, 12, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(120, 70, 0);
+  doc.text("Pegou alguma coisa? Anote na FOLHA DE RETIRADAS (última página) ou avise o encarregado.", W / 2, 38.5, { align: "center" });
+  const corpo = [];
+  for (const cat of [...new Set(lista.map(i => i.categoria))]) {
+    corpo.push([{ content: cat.toUpperCase(), colSpan: 4, styles: { fillColor: [220, 230, 241], textColor: azul, fontStyle: "bold", fontSize: 10 } }]);
+    lista.filter(i => i.categoria === cat).forEach(i => corpo.push([i.nome + (i.emprestimos.length ? `\n(emprestada: ${i.emprestimos.map(e => e.pessoa).join(", ")})` : ""),
+      i.local || "—", qtdTxt(Math.max(i.saldo, 0), i.unidade), Number(i.minimo) ? qtdTxt(i.minimo, i.unidade) : "—"]));
+  }
+  doc.autoTable({ startY: 48, margin: { left: M, right: M, bottom: 14, top: 32 }, head: [["Item", "Onde está", "Tem", "Mínimo"]], body: corpo,
+    styles: { fontSize: 11, cellPadding: 2.4 }, headStyles: { fillColor: azul, textColor: 255, fontSize: 11 },
+    columnStyles: { 1: { cellWidth: 46 }, 2: { cellWidth: 26, halign: "right", fontStyle: "bold" }, 3: { cellWidth: 24, halign: "right", textColor: 110 } },
+    didParseCell: c => { if (c.section !== "body" || c.column.index !== 2) return; const nome = String(c.row.raw[0]?.content ?? c.row.raw[0]).split("\n")[0], i = lista.find(x => x.nome === nome);
+      if (i?.baixo || i?.saldo <= 0) c.cell.styles.textColor = [180, 35, 24]; },
+    didDrawPage: d => { if (d.pageNumber > 1) topo("ALMOXARIFADO", `continuação · atualizado em ${hoje}`); rodape(); } });
+  let y = doc.lastAutoTable.finalY + 6;
+  const baixos = lista.filter(i => i.baixo || i.saldo <= 0);
+  if (baixos.length) { if (y > 270) { doc.addPage(); topo("ALMOXARIFADO", `continuação · atualizado em ${hoje}`); rodape(); y = 34; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(180, 35, 24);
+    doc.text(doc.splitTextToSize(`Acabando (avise o encarregado): ${baixos.map(i => i.nome).join(", ")}.`, W - 2 * M), M, y); }
+  // folha de retiradas
+  doc.addPage(); topo("RETIRADAS", "Anote tudo o que pegar · o encarregado lança no sistema");
+  doc.autoTable({ startY: 33, margin: { left: M, right: M, bottom: 14 }, head: [["Data", "Item", "Qtd", "Quem pegou", "Para quê / máquina", "Assinatura"]],
+    body: Array.from({ length: 24 }, () => ["", "", "", "", "", ""]), theme: "grid",
+    styles: { fontSize: 10, minCellHeight: 9.5, lineColor: [150, 150, 150], lineWidth: 0.2 }, headStyles: { fillColor: azul, textColor: 255 },
+    columnStyles: { 0: { cellWidth: 18 }, 2: { cellWidth: 14 }, 3: { cellWidth: 32 }, 4: { cellWidth: 36 }, 5: { cellWidth: 30 } }, didDrawPage: rodape });
+  doc.save(`almoxarifado-porta-${iso(new Date())}.pdf`);
+}
+$("#btAlmoxPorta").addEventListener("click", pdfPorta);
 $("#btContagemPdf").addEventListener("click", () => pdfAlmox(true));
 
 let mz = null;
