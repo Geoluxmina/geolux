@@ -229,7 +229,7 @@
           Na balança, gere o relatório filtrado só pela data do dia, com todos os clientes e produtos.
           Anexar o mesmo arquivo ou o mesmo tiquete duas vezes não duplica nada.</p>
       </div>
-      <div id="previa"></div>
+      <div id="previa"></div><datalist id="motoristasLista"></datalist>
       <div class="card pergunta escondido" id="pergunta">
         <b id="perguntaTxt"></b>
         <div class="linha" style="margin-top:10px">
@@ -996,6 +996,9 @@ $("#arquivo").addEventListener("change", async e => {
   const conhecidos = new Map((apelidos || []).map(a => [a.apelido, a.produto_id]));
   const { data: placasCad } = await db.from("placas").select("placa");
   const placasConhecidas = new Set((placasCad || []).map(p => p.placa));
+  db.from("pesagens").select("motorista").not("motorista", "is", null).order("saida_em", { ascending: false }).limit(2000).then(({ data }) => {
+    $("#motoristasLista").innerHTML = [...new Set((data || []).map(x => x.motorista.trim()).filter(Boolean))].sort().map(m => `<option value="${esc(m)}">`).join("");
+  });
   let html = "";
   for (const f of e.target.files) {
     const buf = await f.arrayBuffer();
@@ -1035,7 +1038,7 @@ $("#arquivo").addEventListener("change", async e => {
     if (r.naoLidas.length) html += `<div class="msg erro">${r.naoLidas.length} linha(s) não reconhecida(s):<br>${r.naoLidas.map(esc).join("<br>")}</div>`;
     if (r.verbras) html += `<div class="msg ok">Ticket da balança da <b>${CLIENTE_VERBRAS}</b>: as carradas entram no cliente ${CLIENTE_VERBRAS}, mesmo com o ticket em nome da Geolux.</div>`;
     const semMotorista = r.pesagens.filter(p => !p.motorista && !ehVerbras(p)).length;
-    if (semMotorista) html += `<div class="msg aviso">${semMotorista} de ${r.pesagens.length} carradas estão sem motorista. Combinado: nenhuma carrada sai da balança sem o nome do motorista preenchido.</div>`;
+    if (semMotorista) html += `<div class="msg aviso">${semMotorista} de ${r.pesagens.length} carradas estão sem motorista. Digite o nome na coluna Motorista antes de gravar (depois de gravada, a carrada não muda).</div>`;
     const placasNovas = [...new Set(r.pesagens.map(p => normPlaca(p.placa)))].filter(x => x && !placasConhecidas.has(x));
     if (placasNovas.length) html += `<div class="msg aviso">Placa(s) sem cadastro: ${placasNovas.map(esc).join(", ")}. Pode gravar normalmente; cadastre depois em Cadastros &gt; Placas.</div>`;
     if (semProduto.length) html += `<div class="msg aviso">Nome de produto novo na balança: ${semProduto.map(esc).join(", ")}. Grave normalmente; o administrador associa em Cadastros.</div>`;
@@ -1044,7 +1047,8 @@ $("#arquivo").addEventListener("change", async e => {
       html += `<div class="msg aviso">Todas as carradas deste relatório têm mais de 7 dias. Se for um relatório antigo, marque "Relatórios antigos" acima antes de gravar.</div>`;
     const semPeso = r.pesagens.filter(p => p.sem_peso).length;
     if (semPeso) html += `<div class="msg ok">${semPeso} carrada(s) de barro sem pesagem completa na balança: entram contadas por carrada.</div>`;
-    html += tabelaPesagens(r.pesagens.map(p => ({ ...p, produto: conhecidos.get(p.produto_balanca.toLowerCase()) ? "ok" : null, por_carrada: ehPorCarrada(p) }))) + "</div>";
+    html += tabelaPesagens(r.pesagens.map(p => ({ ...p, produto: conhecidos.get(p.produto_balanca.toLowerCase()) ? "ok" : null, por_carrada: ehPorCarrada(p) })),
+                           ja || !r.pesagens.length ? null : lidos.length) + "</div>";
     if (!ja && r.pesagens.length) lidos.push({ nome: f.name, buf, hash, ...r });
   }
   $("#previa").innerHTML = html || '<div class="vazio">Nenhum arquivo.</div>';
@@ -1065,14 +1069,29 @@ function limparAnexo() {
 }
 $("#btRemover").addEventListener("click", limparAnexo);
 
-function tabelaPesagens(ps) {
+// arq: posição do arquivo em "lidos"; quando informado, carrada sem motorista ganha um campo para digitar o nome
+function tabelaPesagens(ps, arq = null) {
+  const mot = p => p.motorista || arq == null ? esc(p.motorista || "—")
+    : `<input data-mot="${arq}|${p.ticket}" list="motoristasLista" placeholder="digitar motorista" style="width:150px;padding:4px 6px">`;
   return `<div class="tabela"><table><tr><th>Tiquete</th><th>Placa</th><th>Produto</th><th>Cliente</th><th>Motorista</th><th>Nº Nota</th><th>Entrada</th><th class="n">Tara (kg)</th><th>Saída</th><th class="n">Bruto (kg)</th><th class="n">Líquido (kg)</th><th>Observação</th></tr>` +
-    ps.map(p => `<tr><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto_balanca)}</td><td>${esc(p.cliente_balanca)}</td><td>${esc(p.motorista || "—")}</td><td>${esc(p.nota || "—")}</td><td>${brHora(p.entrada_em)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td class="n"><b>${liqTxt(p)}</b></td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") +
+    ps.map(p => `<tr><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto_balanca)}</td><td>${esc(p.cliente_balanca)}</td><td>${mot(p)}</td><td>${esc(p.nota || "—")}</td><td>${brHora(p.entrada_em)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td class="n"><b>${liqTxt(p)}</b></td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") +
     `</table></div>`;
 }
 
+// motorista digitado na prévia; o mesmo nome vale para as outras carradas da mesma placa que ficaram em branco
+document.addEventListener("change", e => {
+  const el = e.target.closest?.("[data-mot]"); if (!el || !el.value.trim()) return;
+  const [arq, t] = el.dataset.mot.split("|"), placa = lidos[arq]?.pesagens.find(p => String(p.ticket) === t)?.placa;
+  document.querySelectorAll(`[data-mot^="${arq}|"]`).forEach(x => {
+    if (!x.value.trim() && lidos[arq].pesagens.find(p => String(p.ticket) === x.dataset.mot.split("|")[1])?.placa === placa) x.value = el.value.trim();
+  });
+});
 $("#btGravar").addEventListener("click", async () => {
   $("#btGravar").disabled = true;
+  document.querySelectorAll("[data-mot]").forEach(x => {
+    const [arq, t] = x.dataset.mot.split("|"), p = lidos[arq]?.pesagens.find(p => String(p.ticket) === t);
+    if (p && x.value.trim()) p.motorista = x.value.trim().toUpperCase();
+  });
   let html = "";
   const gravados = [], historico = papel === "admin" && $("#historico").checked;
   for (const r of lidos) {
