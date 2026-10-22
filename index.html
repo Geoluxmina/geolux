@@ -153,10 +153,10 @@
     </div>
     <div class="grupo" data-grupo="almox">
       <h4>Almoxarifado</h4>
-      <button data-aba="almox" data-parte="estoque">Estoque</button>
-      <button data-aba="almox" data-parte="movimento">Entrada / Saída</button>
-      <button data-aba="almox" data-parte="contagem">Contagem</button>
+      <button data-aba="almox" data-parte="estoque">Inventário</button>
       <button data-aba="almox" data-parte="cadastro">Cadastro de itens</button>
+      <button data-aba="almox" data-parte="contagem">Contagem</button>
+      <button data-aba="almox" data-parte="movimento">Entrada / Saída</button>
     </div>
     <div class="grupo" data-grupo="sistema" data-admin>
       <h4>Sistema</h4>
@@ -569,13 +569,14 @@
         <label>Buscar item <input id="aBusca" placeholder="nome do item"></label>
         <label>Categoria <select id="aCat"></select></label>
         <label>Local <select id="aLocal"></select></label>
+        <label>Estado <select id="aEstado"><option value="">Todos</option><option value="novo">Novo</option><option value="bom">Bom</option><option value="regular">Regular</option><option value="ruim">Ruim</option><option value="quebrado">Quebrado</option><option value="-">Sem estado</option></select></label>
         <button class="bt" id="btAlmox">Atualizar</button>
-        <button class="bt sec" id="btAlmoxPdf">Estoque (PDF)</button>
+        <button class="bt sec" id="btAlmoxPdf">Inventário (PDF)</button>
         <button class="bt sec" id="btAlmoxPorta">Folha da porta (PDF)</button>
       </div>
       <div class="kpis" id="aKpis" data-parte="estoque"></div>
       <div class="card" data-parte="estoque">
-        <h3 style="margin-top:0">Estoque</h3>
+        <h3 style="margin-top:0">Inventário</h3>
         <div class="tabela" id="aEstoque"></div>
       </div>
       <div class="painel-grade" data-parte="estoque" style="grid-template-columns:1fr 1fr">
@@ -632,8 +633,16 @@
           <label>Categoria <select id="aiCat"></select></label>
           <label>Unidade <input id="aiUnidade" list="aiUnidades" value="un" style="max-width:90px"></label>
           <label>Local <input id="aiLocal" list="aiLocais" placeholder="ex.: Prateleira A2"></label>
+          <label><span id="aiQtdT">Quantidade que tem hoje</span> <input id="aiQtd" inputmode="decimal" style="max-width:110px"></label>
+          <label>Estado <select id="aiEstado"><option value="">—</option><option value="novo">Novo</option><option value="bom">Bom</option><option value="regular">Regular</option><option value="ruim">Ruim</option><option value="quebrado">Quebrado</option></select></label>
+          <label>Marca / modelo <input id="aiMarca" placeholder="ex.: Bosch GWS 22-180"></label>
+          <label>Nº de série ou patrimônio <input id="aiSerie"></label>
+          <label>Responsável <input id="aiResp" placeholder="quem cuida do item"></label>
+          <label>Data de aquisição <input type="date" id="aiAdq"></label>
+          <label>Valor de cada unidade (R$) <input id="aiValor" inputmode="decimal" style="max-width:120px" placeholder="estimado"></label>
           <label>Quantidade mínima <input id="aiMin" inputmode="decimal" style="max-width:110px" placeholder="0"></label>
           <label>Observação <input id="aiObs" style="min-width:200px"></label>
+          <label>Foto do item (opcional) <input type="file" id="aiFoto" accept="image/*"></label>
           <label class="check"><input type="checkbox" id="aiFerr"> É ferramenta (pode ser emprestada)</label>
         </div>
         <datalist id="aiUnidades"><option value="un"><option value="L"><option value="kg"><option value="m"><option value="par"><option value="cx"><option value="pc"></datalist>
@@ -2666,7 +2675,7 @@ $("#aba-diesel").addEventListener("click", async e => {
 // ------------------------------------------------------------------ almoxarifado
 let az = null;
 const SINAL_ALMOX = { entrada: 1, devolucao: 1, ajuste: 1, saida: -1, emprestimo: -1 };
-const NOME_MOV = { entrada: "Entrada (compra)", saida: "Saída", emprestimo: "Empréstimo", devolucao: "Devolução", ajuste: "Ajuste de contagem" };
+const NOME_MOV = { entrada: "Entrada (compra)", saida: "Saída", emprestimo: "Empréstimo", devolucao: "Devolução", ajuste: "Ajuste de inventário" };
 const qtdTxt = (n, u) => `${Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 })} ${u || ""}`.trim();
 async function carregarAlmox() {
   if (!$("#ahAte").value) { const h = new Date(); $("#ahAte").value = iso(h); $("#ahDe").value = iso(new Date(h.getFullYear(), h.getMonth() - 1, 1)); }
@@ -2701,7 +2710,8 @@ function calcularAlmox() {
     const x = porItem.get(i.id);
     i.saldo = Math.round(x.saldo * 1000) / 1000;
     i.custo = x.qCompra ? x.vCompra / x.qCompra : null;
-    i.valor = i.custo != null && i.saldo > 0 ? i.saldo * i.custo : 0;
+    i.valorUnit = i.custo ?? (i.valor_estimado != null ? Number(i.valor_estimado) : null);
+    i.valor = i.valorUnit != null && i.saldo > 0 ? i.saldo * i.valorUnit : 0;
     i.emprestimos = [...x.emprest.values()].filter(e => e.qtd > 0);
     i.categoria = az.cats.find(c => c.id === i.categoria_id)?.nome || "Sem categoria";
     i.baixo = i.ativo && Number(i.minimo) > 0 && i.saldo < Number(i.minimo);
@@ -2709,8 +2719,9 @@ function calcularAlmox() {
 }
 const itensAtivos = () => az.itens.filter(i => i.ativo).sort((a, b) => a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome));
 function filtroAlmox() {
-  const b = normNome($("#aBusca").value), c = $("#aCat").value, l = $("#aLocal").value;
-  return itensAtivos().filter(i => (!b || normNome(i.nome).includes(b)) && (!c || String(i.categoria_id) === c) && (!l || (i.local || "") === l));
+  const b = normNome($("#aBusca").value), c = $("#aCat").value, l = $("#aLocal").value, e = $("#aEstado").value;
+  return itensAtivos().filter(i => (!b || normNome([i.nome, i.marca_modelo, i.numero_serie, i.responsavel].join(" ")).includes(b)) && (!c || String(i.categoria_id) === c)
+    && (!l || (i.local || "") === l) && (!e || (e === "-" ? !i.estado : i.estado === e)));
 }
 function opcoesSelect(sel, opcoes, primeira) {
   const atual = $(sel).value;
@@ -2729,33 +2740,40 @@ function mostrarAlmox() {
   opcoesSelect("#amMaq", az.maquinas.filter(m => m.ativo !== false).map(m => [m.id, m.nome]), "—");
   mostrarEstoque(); mostrarHistAlmox(); mostrarContagem(); mostrarCadastroAlmox(); ajustarFormMov();
 }
+const NOME_ESTADO = { novo: "Novo", bom: "Bom", regular: "Regular", ruim: "Ruim", quebrado: "Quebrado" };
+const COR_ESTADO = { novo: "var(--ok)", bom: "var(--ok)", regular: "var(--aviso)", ruim: "var(--erro)", quebrado: "var(--erro)" };
+const estadoTxt = e => e ? `<span style="color:${COR_ESTADO[e]};font-weight:600">${NOME_ESTADO[e]}</span>` : '<span style="color:var(--suave)">—</span>';
 function mostrarEstoque() {
-  const lista = filtroAlmox(), ativos = itensAtivos(), mes = iso(new Date()).slice(0, 7);
-  const baixos = ativos.filter(i => i.baixo), negativos = ativos.filter(i => i.saldo < 0);
+  const lista = filtroAlmox(), ativos = itensAtivos();
+  const baixos = ativos.filter(i => i.baixo), negativos = ativos.filter(i => i.saldo < 0), ruins = ativos.filter(i => i.estado === "ruim" || i.estado === "quebrado");
   const emprest = ativos.flatMap(i => i.emprestimos.map(e => ({ ...e, item: i })));
-  const saidasMes = az.movs.filter(m => m.situacao === "valida" && m.tipo === "saida" && m.feito_em.slice(0, 7) === mes);
-  const valorSaidas = saidasMes.reduce((t, m) => t + Number(m.quantidade) * Number(m.valor_unit || 0), 0);
   const antigos = emprest.filter(e => e.desde && (Date.now() - new Date(e.desde + "T12:00:00")) / 864e5 > 7);
   $("#aKpis").innerHTML = [
-    ["Itens cadastrados", ativos.length, `em ${new Set(ativos.map(i => i.categoria_id)).size} categoria(s)`],
-    ["Valor em estoque", real(ativos.reduce((t, i) => t + i.valor, 0)), "pelo custo médio de compra"],
+    ["Itens no inventário", ativos.length, `em ${new Set(ativos.map(i => i.categoria_id)).size} categoria(s)`],
+    ["Valor do inventário", real(ativos.reduce((t, i) => t + i.valor, 0)), "pela compra ou valor estimado"],
+    ["Ruins ou quebrados", ruins.length, ruins.length ? "consertar ou trocar" : "nenhum", ruins.length ? "erro" : ""],
     ["Abaixo do mínimo", baixos.length, baixos.length ? "comprar antes de faltar" : "nada faltando", baixos.length ? "erro" : ""],
-    ["Ferramentas emprestadas", emprest.length, antigos.length ? `${antigos.length} há mais de 7 dias` : "nenhuma atrasada"],
-    ["Saídas no mês", real(valorSaidas), `${saidasMes.length} saída(s)`]]
+    ["Ferramentas emprestadas", emprest.length, antigos.length ? `${antigos.length} há mais de 7 dias` : "nenhuma atrasada"]]
     .map(([t, v, d, c]) => `<div class="kpi" ${c ? 'style="border-color:var(--erro)"' : ""}><small>${t}</small><b ${c ? 'style="color:var(--erro)"' : ""}>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
   $("#aEstoque").innerHTML = !lista.length ? `<div class="vazio">${ativos.length ? "Nenhum item com esse filtro." : "Nenhum item cadastrado. Comece pelo Cadastro de itens."}</div>` :
-    `<table><tr><th>Item</th><th class="n">Tem</th><th class="n">Mínimo</th><th class="n">Custo médio</th><th class="n">Valor</th><th></th></tr>` +
-    lista.map(i => `<tr><td style="white-space:normal;min-width:150px">${esc(i.nome)}${i.ferramenta ? ' <small class="tag">ferramenta</small>' : ""}<br><small style="color:var(--suave)">${esc(i.categoria)} · ${esc(i.local || "sem local")}</small>${i.emprestimos.length ? `<br><small style="color:var(--aviso)">emprestada: ${i.emprestimos.map(e => `${qtdTxt(e.qtd, i.unidade)} com ${esc(e.pessoa)}`).join(", ")}</small>` : ""}</td>` +
-      `<td class="n" ${i.baixo || i.saldo < 0 ? 'style="color:var(--erro);font-weight:600"' : ""}>${qtdTxt(i.saldo, i.unidade)}</td>` +
-      `<td class="n">${Number(i.minimo) ? qtdTxt(i.minimo, i.unidade) : "—"}</td><td class="n">${real(i.custo)}</td><td class="n">${i.valor ? real(i.valor) : "—"}</td>` +
-      `<td style="white-space:nowrap"><button class="mini" data-amov="entrada" data-aitem="${i.id}">Entrada</button> <button class="mini" data-amov="${i.ferramenta ? "emprestimo" : "saida"}" data-aitem="${i.id}">${i.ferramenta ? "Emprestar" : "Saída"}</button></td></tr>`).join("") +
+    `<table><tr><th>Item</th><th>Estado</th><th class="n">Tem</th><th>Responsável</th><th class="n">Valor</th><th></th></tr>` +
+    lista.map(i => `<tr><td style="white-space:normal;min-width:170px">${esc(i.nome)}${i.ferramenta ? ' <small class="tag">ferramenta</small>' : ""}` +
+      `${i.marca_modelo || i.numero_serie ? `<br><small>${esc([i.marca_modelo, i.numero_serie ? "nº " + i.numero_serie : ""].filter(Boolean).join(" · "))}</small>` : ""}` +
+      `<br><small style="color:var(--suave)">${esc(i.categoria)} · ${esc(i.local || "sem local")}${i.adquirido_em ? ` · desde ${br(i.adquirido_em)}` : ""}</small>` +
+      `${i.emprestimos.length ? `<br><small style="color:var(--aviso)">emprestada: ${i.emprestimos.map(e => `${qtdTxt(e.qtd, i.unidade)} com ${esc(e.pessoa)}`).join(", ")}</small>` : ""}</td>` +
+      `<td>${estadoTxt(i.estado)}</td><td class="n" ${i.baixo || i.saldo < 0 ? 'style="color:var(--erro);font-weight:600"' : ""}>${qtdTxt(i.saldo, i.unidade)}${Number(i.minimo) ? `<br><small style="color:var(--suave)">mín. ${qtdTxt(i.minimo, i.unidade)}</small>` : ""}</td>` +
+      `<td>${esc(i.responsavel || "—")}</td><td class="n">${i.valor ? real(i.valor) : "—"}${i.valorUnit != null && i.saldo > 1 ? `<br><small style="color:var(--suave)">${real(i.valorUnit)} cada</small>` : ""}</td>` +
+      `<td style="white-space:nowrap">${i.foto_caminho ? `<button class="mini" data-anota="${esc(i.foto_caminho)}">Foto</button> ` : ""}<button class="mini" data-aeditar="${i.id}">Editar</button>${i.ferramenta ? ` <button class="mini" data-amov="emprestimo" data-aitem="${i.id}">Emprestar</button>` : ""}</td></tr>`).join("") +
     `<tr class="dia"><td colspan="4">TOTAL DOS ITENS DA LISTA (${lista.length})</td><td class="n">${real(lista.reduce((t, i) => t + i.valor, 0))}</td><td></td></tr></table>`;
   const al = [];
+  if (ruins.length) al.push(`<b>${ruins.length} item(ns) ruim ou quebrado:</b> ${ruins.map(i => `${esc(i.nome)} (${NOME_ESTADO[i.estado].toLowerCase()})`).join("; ")}.`);
   if (baixos.length) al.push(`<b>${baixos.length} item(ns) abaixo do mínimo:</b> ${baixos.map(i => `${esc(i.nome)} (tem ${qtdTxt(i.saldo, i.unidade)}, mínimo ${qtdTxt(i.minimo, i.unidade)})`).join("; ")}.`);
-  negativos.forEach(i => al.push(`<b>${esc(i.nome)}</b> está negativo (${qtdTxt(i.saldo, i.unidade)}): faltou lançar uma entrada ou a contagem está errada.`));
+  negativos.forEach(i => al.push(`<b>${esc(i.nome)}</b> está negativo (${qtdTxt(i.saldo, i.unidade)}): corrija a quantidade no cadastro ou faça uma contagem.`));
   antigos.forEach(e => al.push(`${esc(e.item.nome)} emprestada para ${esc(e.pessoa)} desde ${br(e.desde)}.`));
-  const semCusto = ativos.filter(i => i.saldo > 0 && i.custo == null).length;
-  if (semCusto) al.push(`${semCusto} item(ns) com estoque e sem valor de compra: o valor em estoque fica menor que o real.`);
+  const semValor = ativos.filter(i => i.saldo > 0 && i.valorUnit == null).length;
+  if (semValor) al.push(`${semValor} item(ns) sem valor: preencha o "valor de cada unidade" no cadastro para o valor do inventário ficar completo.`);
+  const semEstado = ativos.filter(i => !i.estado).length;
+  if (semEstado) al.push(`${semEstado} item(ns) sem estado (novo, bom, regular, ruim ou quebrado).`);
   $("#aAlertas").innerHTML = al.length ? al.map(x => `<li>${x}</li>`).join("") : "<li>Tudo em dia.</li>";
   $("#aEmprest").innerHTML = !emprest.length ? '<div class="vazio">Nenhuma ferramenta emprestada.</div>' :
     `<table><tr><th>Ferramenta</th><th>Com quem</th><th class="n">Qtd</th><th>Desde</th><th></th></tr>` +
@@ -2785,9 +2803,10 @@ function mostrarContagem() {
 function mostrarCadastroAlmox() {
   const lista = [...az.itens].sort((a, b) => (b.ativo - a.ativo) || a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome));
   $("#aItens").innerHTML = !lista.length ? '<div class="vazio">Nenhum item cadastrado ainda.</div>' :
-    `<table><tr><th>Item</th><th>Categoria</th><th>Unidade</th><th>Local</th><th class="n">Mínimo</th><th>Ferramenta</th><th class="n">Tem</th><th></th></tr>` +
-    lista.map(i => `<tr class="${i.ativo ? "" : "cancelada"}"><td>${esc(i.nome)}${i.ativo ? "" : ' <small class="alerta">desativado</small>'}${i.observacao ? `<br><small style="color:var(--suave)">${esc(i.observacao)}</small>` : ""}</td><td>${esc(i.categoria)}</td><td>${esc(i.unidade)}</td><td>${esc(i.local || "—")}</td>` +
-      `<td class="n">${Number(i.minimo) ? qtdTxt(i.minimo, i.unidade) : "—"}</td><td>${i.ferramenta ? "sim" : ""}</td><td class="n">${qtdTxt(i.saldo, i.unidade)}</td>` +
+    `<table><tr><th>Item</th><th>Estado</th><th class="n">Tem</th><th></th></tr>` +
+    lista.map(i => `<tr class="${i.ativo ? "" : "cancelada"}"><td style="white-space:normal;min-width:170px">${esc(i.nome)}${i.ferramenta ? ' <small class="tag">ferramenta</small>' : ""}${i.ativo ? "" : ' <small class="alerta">desativado</small>'}` +
+      `<br><small style="color:var(--suave)">${esc([i.categoria, i.local, i.marca_modelo, i.numero_serie ? "nº " + i.numero_serie : ""].filter(Boolean).join(" · "))}</small></td>` +
+      `<td>${estadoTxt(i.estado)}</td><td class="n">${qtdTxt(i.saldo, i.unidade)}</td>` +
       `<td style="white-space:nowrap"><button class="mini" data-aeditar="${i.id}">Editar</button> <button class="mini" data-aativo="${i.id}">${i.ativo ? "Desativar" : "Reativar"}</button></td></tr>`).join("") + "</table>";
   $("#aCats").innerHTML = az.cats.filter(c => c.ativo).map(c => `<span class="tag" style="margin:0 6px 6px 0">${esc(c.nome)} (${az.itens.filter(i => i.ativo && i.categoria_id === c.id).length})</span>`).join("");
 }
@@ -2804,7 +2823,7 @@ $("#amTipo").addEventListener("change", ajustarFormMov);
 $("#aiCat").addEventListener("change", e => { if (/ferrament/i.test(e.target.selectedOptions[0]?.textContent || "")) $("#aiFerr").checked = true; });
 $("#amItem").addEventListener("change", ajustarFormMov);
 $("#btAlmox").addEventListener("click", carregarAlmox);
-for (const i of ["#aBusca", "#aCat", "#aLocal"]) $(i).addEventListener("input", () => az && mostrarEstoque());
+for (const i of ["#aBusca", "#aCat", "#aLocal", "#aEstado"]) $(i).addEventListener("input", () => az && mostrarEstoque());
 for (const i of ["#ahDe", "#ahAte", "#ahItem"]) $(i).addEventListener("change", () => az && mostrarHistAlmox());
 $("#acCat").addEventListener("change", () => az && mostrarContagem());
 const irParte = parte => document.querySelector(`#abas [data-aba="almox"][data-parte="${parte}"]`).click();
@@ -2830,8 +2849,12 @@ $("#aba-almox").addEventListener("click", async e => {
     const i = az.itens.find(x => String(x.id) === d.aeditar);
     $("#aiForm").dataset.id = i.id; $("#aiTitulo").textContent = `Editar item: ${i.nome}`;
     $("#aiNome").value = i.nome; $("#aiCat").value = i.categoria_id || ""; $("#aiUnidade").value = i.unidade; $("#aiLocal").value = i.local || "";
-    $("#aiMin").value = Number(i.minimo) ? String(Number(i.minimo)).replace(".", ",") : ""; $("#aiObs").value = i.observacao || ""; $("#aiFerr").checked = i.ferramenta;
-    $("#btItemNovo").classList.remove("escondido"); msg("#aiMsg");
+    const num = v => v != null && Number(v) ? String(Number(v)).replace(".", ",") : "";
+    $("#aiMin").value = num(i.minimo); $("#aiObs").value = i.observacao || ""; $("#aiFerr").checked = i.ferramenta;
+    $("#aiQtd").value = String(i.saldo).replace(".", ","); $("#aiQtdT").textContent = "Quantidade que tem hoje (corrigir)";
+    $("#aiEstado").value = i.estado || ""; $("#aiMarca").value = i.marca_modelo || ""; $("#aiSerie").value = i.numero_serie || ""; $("#aiResp").value = i.responsavel || "";
+    $("#aiAdq").value = i.adquirido_em || ""; $("#aiValor").value = i.valor_estimado != null ? String(Number(i.valor_estimado)).replace(".", ",") : ""; $("#aiFoto").value = "";
+    $("#btItemNovo").classList.remove("escondido"); msg("#aiMsg"); irParte("cadastro");
     $("#aiForm").scrollIntoView({ behavior: "smooth" }); return $("#aiNome").focus();
   }
   if (d.aativo) {
@@ -2845,26 +2868,47 @@ $("#aba-almox").addEventListener("click", async e => {
 });
 function limparFormItem() {
   delete $("#aiForm").dataset.id; $("#aiTitulo").textContent = "Cadastrar item";
-  for (const i of ["#aiNome", "#aiLocal", "#aiMin", "#aiObs"]) $(i).value = "";
+  for (const i of ["#aiNome", "#aiLocal", "#aiMin", "#aiObs", "#aiQtd", "#aiEstado", "#aiMarca", "#aiSerie", "#aiResp", "#aiAdq", "#aiValor", "#aiFoto"]) $(i).value = "";
+  $("#aiQtdT").textContent = "Quantidade que tem hoje";
   $("#aiUnidade").value = "un"; $("#aiFerr").checked = false; $("#btItemNovo").classList.add("escondido");
 }
 $("#btItemNovo").addEventListener("click", () => { limparFormItem(); msg("#aiMsg"); });
 $("#btItem").addEventListener("click", async () => {
   const nome = $("#aiNome").value.trim().replace(/\s+/g, " "), min = numero($("#aiMin").value.replace(/\./g, "")), id = $("#aiForm").dataset.id;
+  const qtd = numero($("#aiQtd").value.replace(/\./g, "")), valor = numero($("#aiValor").value.replace(/\./g, "")), adq = $("#aiAdq").value;
   if (!nome) return msg("#aiMsg", "erro", "Escreva o nome do item.");
   if (!$("#aiCat").value) return msg("#aiMsg", "erro", "Escolha a categoria.");
   if (!$("#aiUnidade").value.trim()) return msg("#aiMsg", "erro", "Informe a unidade (un, L, kg...).");
   if (min != null && !(min >= 0)) return msg("#aiMsg", "erro", "A quantidade mínima precisa ser um número.");
+  if (qtd != null && !(qtd >= 0)) return msg("#aiMsg", "erro", "A quantidade que tem hoje precisa ser um número (0 ou mais).");
+  if (valor != null && !(valor >= 0)) return msg("#aiMsg", "erro", "Confira o valor: use só números.");
   const igual = az.itens.find(i => normNome(i.nome) === normNome(nome) && String(i.id) !== id);
   if (igual) return msg("#aiMsg", "erro", `Já existe o item "${esc(igual.nome)}"${igual.ativo ? "" : " (desativado: reative na lista abaixo)"}.`);
   const dados = { nome, categoria_id: Number($("#aiCat").value), unidade: $("#aiUnidade").value.trim(), local: $("#aiLocal").value.trim() || null,
-    minimo: min || 0, ferramenta: $("#aiFerr").checked, observacao: $("#aiObs").value.trim() || null };
+    minimo: min || 0, ferramenta: $("#aiFerr").checked, observacao: $("#aiObs").value.trim() || null, estado: $("#aiEstado").value || null,
+    marca_modelo: $("#aiMarca").value.trim() || null, numero_serie: $("#aiSerie").value.trim() || null, responsavel: $("#aiResp").value.trim() || null,
+    adquirido_em: adq || null, valor_estimado: valor };
   $("#btItem").disabled = true;
-  const { error } = id ? await db.from("almox_itens").update(dados).eq("id", Number(id)) : await db.from("almox_itens").insert({ ...dados, ativo: true });
+  try {
+    const foto = await enviarFotoDiesel("almoxarifado/fotos", $("#aiFoto").files[0]);
+    if (foto) dados.foto_caminho = foto;
+    const { error } = id ? await db.from("almox_itens").update(dados).eq("id", Number(id)) : await db.from("almox_itens").insert({ ...dados, ativo: true });
+    if (error) throw error;
+    // a quantidade de hoje entra como ajuste de inventário (o histórico guarda de quanto para quanto)
+    const antes = id ? az.itens.find(i => String(i.id) === id).saldo : 0;
+    await carregarAlmox();
+    const item = az.itens.find(i => normNome(i.nome) === normNome(nome));
+    const dif = qtd == null ? 0 : Math.round((qtd - antes) * 1000) / 1000;
+    if (dif && item) {
+      const r = await db.from("almox_movimentos").insert({ item_id: item.id, feito_em: iso(new Date()), tipo: "ajuste", quantidade: dif, situacao: "valida", registrado_por: usuario.id,
+        observacao: id ? `Inventário: corrigido de ${qtdTxt(antes, item.unidade)} para ${qtdTxt(qtd, item.unidade)}` : `Inventário inicial: ${qtdTxt(qtd, item.unidade)}` });
+      if (r.error) throw r.error;
+      await carregarAlmox();
+    }
+    limparFormItem();
+    msg("#aiMsg", "ok", id ? "Item alterado." : `Item "${esc(nome)}" cadastrado${qtd ? ` com ${qtdTxt(qtd, dados.unidade)}` : ""}.`);
+  } catch (e) { msg("#aiMsg", "erro", "Não foi salvo. " + erroTxt(e)); }
   $("#btItem").disabled = false;
-  if (error) return msg("#aiMsg", "erro", "Não foi salvo. " + erroTxt(error));
-  limparFormItem(); await carregarAlmox();
-  msg("#aiMsg", "ok", id ? "Item alterado." : `Item "${esc(nome)}" cadastrado. Para lançar o que já tem dele, use Contagem ou Entrada.`);
 });
 $("#btCat").addEventListener("click", async () => {
   const nome = $("#acNova").value.trim().replace(/\s+/g, " ");
@@ -2934,7 +2978,7 @@ function pdfAlmox(contagem) {
   doc.setFontSize(6.5); doc.text("DOCUMENTO", W - M, 25, { align: "right" });
   doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(0); doc.text(num, W - M, 29, { align: "right" });
   doc.setDrawColor(...azul); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21);
-  doc.setFontSize(13); doc.text(contagem ? "Lista de contagem do almoxarifado" : "Estoque do almoxarifado", M, 29);
+  doc.setFontSize(13); doc.text(contagem ? "Lista de contagem do almoxarifado" : "Inventário do almoxarifado", M, 29);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
   doc.text(contagem ? `Data da contagem: ____/____/______   Contado por: ______________________________` : `Posição em ${new Date().toLocaleDateString("pt-BR")} · ${lista.length} item(ns)`, M, 36);
   const rodape = () => { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(130);
@@ -2945,12 +2989,14 @@ function pdfAlmox(contagem) {
   if (contagem) doc.autoTable({ ...estilo, startY: 41, head: [["Local", "Item", "Unid.", "No sistema", "Contado", "Obs."]],
     body: lista.map(i => [i.local || "—", i.nome, i.unidade, qtdTxt(i.saldo), "", ""]),
     columnStyles: { 3: { halign: "right" }, 4: { cellWidth: 26 }, 5: { cellWidth: 34 } }, bodyStyles: { minCellHeight: 8 } });
-  else doc.autoTable({ ...estilo, startY: 41, head: [["Item", "Categoria", "Local", "Tem", "Mínimo", "Custo médio", "Valor"]],
-    body: lista.map(i => [i.nome, i.categoria, i.local || "—", qtdTxt(i.saldo, i.unidade), Number(i.minimo) ? qtdTxt(i.minimo, i.unidade) : "—", real(i.custo), i.valor ? real(i.valor) : "—"]),
-    foot: [["TOTAL", "", "", "", "", "", real(lista.reduce((t, i) => t + i.valor, 0))]],
-    columnStyles: { 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" } },
-    didParseCell: c => { if (c.section === "body" && c.column.index === 3 && (lista[c.row.index].baixo || lista[c.row.index].saldo < 0)) { c.cell.styles.textColor = [180, 35, 24]; c.cell.styles.fontStyle = "bold"; } } });
-  doc.save(`${contagem ? "contagem" : "estoque"}-almoxarifado-${iso(new Date())}.pdf`);
+  else doc.autoTable({ ...estilo, startY: 41, head: [["Item", "Categoria / local", "Estado", "Tem", "Responsável", "Valor"]],
+    body: lista.map(i => [[i.nome, [i.marca_modelo, i.numero_serie ? "nº " + i.numero_serie : ""].filter(Boolean).join(" · ")].filter(Boolean).join("\n"),
+      `${i.categoria}\n${i.local || "sem local"}`, i.estado ? NOME_ESTADO[i.estado] : "—", qtdTxt(i.saldo, i.unidade), i.responsavel || "—", i.valor ? real(i.valor) : "—"]),
+    foot: [["TOTAL", "", "", "", "", real(lista.reduce((t, i) => t + i.valor, 0))]],
+    columnStyles: { 3: { halign: "right" }, 5: { halign: "right" } },
+    didParseCell: c => { if (c.section === "body" && c.column.index === 2 && ["ruim", "quebrado"].includes(lista[c.row.index].estado)) { c.cell.styles.textColor = [180, 35, 24]; c.cell.styles.fontStyle = "bold"; }
+      if (c.section === "body" && c.column.index === 3 && (lista[c.row.index].baixo || lista[c.row.index].saldo < 0)) { c.cell.styles.textColor = [180, 35, 24]; c.cell.styles.fontStyle = "bold"; } } });
+  doc.save(`${contagem ? "contagem" : "inventario"}-almoxarifado-${iso(new Date())}.pdf`);
 }
 $("#btAlmoxPdf").addEventListener("click", () => pdfAlmox(false));
 // folha para pendurar na porta: o que tem e onde está (sem valores) + folha de retiradas para anotar à mão
