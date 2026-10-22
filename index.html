@@ -763,7 +763,7 @@ function sha256js(m) {
 function alertas(p) {
   if (papel !== "admin" || p.conferida) return "";
   const a = [];
-  if (!p.motorista) a.push("motorista não informado");
+  if (!p.motorista && !ehVerbras(p)) a.push("motorista não informado"); // ticket da VERBRAS não traz motorista
   const min = (new Date(p.saida_em) - new Date(p.entrada_em)) / 60000;
   if (p.por_carrada) {} // barro não pesa: entrada e saída podem ser o mesmo registro
   else if (min <= 0) a.push("saída no mesmo minuto da entrada");
@@ -797,7 +797,66 @@ async function lerPdf(buf) {
     for (const y of [...porY.keys()].sort((a, b) => b - a))
       linhas.push(porY.get(y).sort((a, b) => a.x - b.x));
   }
-  return interpretar(linhas);
+  return linhas.some(l => l.some(i => /^Movimento de pesagem/i.test(i.s))) ? interpretarGuardian(linhas) : interpretar(linhas);
+}
+
+// ticket da balança da VERBRAS S2 MINERAÇÃO (sistema Guardian, "Movimento de pesagem"): sai em nome da Geolux,
+// mas a pesagem é toda da VERBRAS. Cada carrada ocupa duas linhas: a de cima com tiquete, placas, pesos e datas,
+// a de baixo com o resto do nome da transportadora e as horas.
+const CLIENTE_VERBRAS = "VERBRAS S2 MINERAÇÃO", OPERADOR_VERBRAS = "Balança VERBRAS";
+const ehVerbras = p => (p.operador_entrada || "") === OPERADOR_VERBRAS;
+function interpretarGuardian(linhas) {
+  const ancoras = { transportador: 170, emissor: 231, item: 270 };
+  for (const l of linhas) for (const it of l) {
+    if (it.s === "Transportadora") ancoras.transportador = it.x;
+    if (it.s === "Emissor") ancoras.emissor = it.x;
+    if (it.s === "Item") ancoras.item = it.x;
+  }
+  const coluna = x => Object.entries(ancoras).reduce((m, c) => Math.abs(c[1] - x) < Math.abs(m[1] - x) ? c : m)[0];
+  const DATA = /^\d{2}\/\d{2}\/\d{4}$/, HORA = /^\d{2}:\d{2}(:\d{2})?$/, PLACA = /^[A-Z]{3}\d[A-Z0-9]\d{2}$/i, NUM = /^\d+$/;
+  const pesagens = [], naoLidas = [];
+  let totais = null, atual = null;
+  const fechar = () => {
+    if (!atual) return;
+    const r = atual; atual = null;
+    if (r.pesos.length < 2 || r.datas.length < 2 || r.horas.length < 2) { naoLidas.push(r.texto.join(" | ")); return; }
+    const [ini, fim, liq] = r.pesos, hora = h => (h.length === 5 ? h + ":00" : h);
+    const quando = (d, h) => `${d.slice(6, 10)}-${d.slice(3, 5)}-${d.slice(0, 2)}T${hora(h)}`;
+    pesagens.push({
+      ticket: r.ticket, placa: r.placas[0] || "", produto_balanca: r.item.trim() || "pedra limpa",
+      cliente_balanca: CLIENTE_VERBRAS, transportador: r.transportador.trim(), motorista: "", nota: "",
+      operador_entrada: OPERADOR_VERBRAS, peso_entrada_kg: Math.min(ini, fim), entrada_em: quando(r.datas[0], r.horas[0]),
+      operador_saida: OPERADOR_VERBRAS, peso_saida_kg: Math.max(ini, fim), saida_em: quando(r.datas[1], r.horas[1]),
+      liquido_kg: liq ?? Math.abs(ini - fim),
+    });
+  };
+  for (const l of linhas) {
+    const textos = l.map(i => i.s);
+    const iTot = textos.indexOf("Totais");
+    if (iTot >= 0) { fechar(); totais = { liquido: num(textos[iTot + 1]) }; continue; }
+    if (/^\d{5,}$/.test(textos[0] || "") && l[0].x < ancoras.transportador - 60) {
+      fechar();
+      atual = { ticket: num(textos[0]), placas: [], pesos: [], datas: [], horas: [], transportador: "", item: "", texto: [...textos] };
+      for (const it of l.slice(1)) {
+        if (PLACA.test(it.s)) atual.placas.push(it.s.toUpperCase());
+        else if (DATA.test(it.s)) atual.datas.push(it.s);
+        else if (NUM.test(it.s) && it.x > ancoras.item) atual.pesos.push(num(it.s));
+        else { const c = coluna(it.x); if (c !== "emissor") atual[c] += " " + it.s; }
+      }
+    } else if (atual) {
+      atual.texto.push(...textos);
+      for (const it of l) {
+        if (HORA.test(it.s)) atual.horas.push(it.s);
+        else { const c = coluna(it.x); if (c !== "emissor") atual[c] += " " + it.s; }
+      }
+    }
+  }
+  fechar();
+  const soma = { carradas: pesagens.length, entrada: 0, saida: 0, liquido: 0 };
+  for (const p of pesagens) { soma.entrada += p.peso_entrada_kg; soma.saida += p.peso_saida_kg; soma.liquido += p.liquido_kg; }
+  if (totais) Object.assign(totais, { carradas: soma.carradas, entrada: soma.entrada, saida: soma.saida });
+  const confere = !!totais && !naoLidas.length && totais.liquido === soma.liquido;
+  return { pesagens, naoLidas, totais, soma, confere, verbras: true };
 }
 
 function interpretar(linhas) {
@@ -974,7 +1033,8 @@ $("#arquivo").addEventListener("change", async e => {
     r.pesagens = unicas;
     r.soma = { ...r.soma, carradas: unicas.length, liquido: unicas.reduce((s, p) => s + p.liquido_kg, 0) };
     if (r.naoLidas.length) html += `<div class="msg erro">${r.naoLidas.length} linha(s) não reconhecida(s):<br>${r.naoLidas.map(esc).join("<br>")}</div>`;
-    const semMotorista = r.pesagens.filter(p => !p.motorista).length;
+    if (r.verbras) html += `<div class="msg ok">Ticket da balança da <b>${CLIENTE_VERBRAS}</b>: as carradas entram no cliente ${CLIENTE_VERBRAS}, mesmo com o ticket em nome da Geolux.</div>`;
+    const semMotorista = r.pesagens.filter(p => !p.motorista && !ehVerbras(p)).length;
     if (semMotorista) html += `<div class="msg aviso">${semMotorista} de ${r.pesagens.length} carradas estão sem motorista. Combinado: nenhuma carrada sai da balança sem o nome do motorista preenchido.</div>`;
     const placasNovas = [...new Set(r.pesagens.map(p => normPlaca(p.placa)))].filter(x => x && !placasConhecidas.has(x));
     if (placasNovas.length) html += `<div class="msg aviso">Placa(s) sem cadastro: ${placasNovas.map(esc).join(", ")}. Pode gravar normalmente; cadastre depois em Cadastros &gt; Placas.</div>`;
@@ -1233,7 +1293,7 @@ async function mostrarRelatorio() {
   const tot = validas.reduce((s, x) => s + x.liquido_kg, 0);
   $("#kpis").innerHTML = [["Carradas", validas.length], ["Total retirado", ton(tot) + " t", barroTxt(validas)],
     ["Clientes", new Set(validas.map(x => x.cliente)).size], ...(papel === "admin" ? [["A conferir", validas.filter(alertas).length],
-      ["Sem motorista", `${validas.filter(x => !x.motorista).length} (${validas.length ? Math.round(validas.filter(x => !x.motorista).length / validas.length * 100) : 0}%)`]] : [])]
+      ["Sem motorista", `${validas.filter(x => !x.motorista && !ehVerbras(x)).length} (${validas.length ? Math.round(validas.filter(x => !x.motorista && !ehVerbras(x)).length / validas.length * 100) : 0}%)`]] : [])]
     .map(([a, b, c]) => `<div class="kpi"><small>${a}</small><b>${b}</b>${c ? `<span class="delta">${c.trim().replace(/^\+ /, "mais ")}</span>` : ""}</div>`).join("");
   if (!atual.length) return $("#relTabela").innerHTML = '<div class="vazio">Nenhuma carrada nesse período.</div>';
   const visao = $("#fVisao").value;
@@ -1792,7 +1852,7 @@ async function carregarPainel() {
   const paraVer = ativos.filter(i => um(i.conferencias) && !um(um(i.conferencias).conferencias_vistas)).length;
   if (paraVer && papel === "admin") al.push(`<b>${paraVer} conferência(s) da balança</b> aguardando você na aba Anexar relatório.`);
   if (semConf && papel !== "diesel") al.push(`${semConf} relatório(s) anexado(s) que a balança ainda não conferiu.`);
-  const semMot = ps.filter(x => !x.motorista && !x.conferida).length;
+  const semMot = ps.filter(x => !x.motorista && !x.conferida && !ehVerbras(x)).length;
   if (semMot) al.push(`${semMot} carrada(s) do período sem motorista (${Math.round(semMot / ps.length * 100)}%).`);
   const conferir = ps.filter(alertas).length;
   if (conferir) al.push(`${conferir} carrada(s) com algo a conferir (aba A conferir).`);
