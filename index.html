@@ -693,7 +693,7 @@ const lerJson = (k, padrao) => { try { return JSON.parse(localStorage.getItem(k)
 const salvarJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
 const semRede = e => !navigator.onLine || /Failed to fetch|NetworkError|Load failed|network|fetch/i.test(e?.message || String(e));
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
-const NOMES_PAPEL = { admin: "Administrador", balanca: "Balança", diesel: "Diesel" };
+const NOMES_PAPEL = { admin: "Administrador", balanca: "Balança", diesel: "Gerência" };
 
 // ------------------------------------------------------------------ utilidades
 const $ = s => document.querySelector(s);
