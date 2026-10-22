@@ -24,6 +24,15 @@
   #aba-diesel .linha > label { min-width:0; max-width:100%; }
   #aba-diesel details summary { cursor:pointer; color:var(--azul); margin-bottom:10px; }
   @media (max-width:640px) { #aba-diesel .linha > label { flex:1 1 100%; } #aba-diesel input, #aba-diesel select { font-size:16px; } }
+  #aba-almox label.check { flex-direction:row; align-items:center; gap:8px; font-size:14px; color:var(--texto); }
+  #aba-almox label.check input { min-width:0; width:20px; height:20px; }
+  #aba-almox input[type=file] { max-width:100%; min-width:0; }
+  #aba-almox .linha > label { min-width:0; max-width:100%; }
+  #aba-almox td input { min-width:0; width:90px; }
+  #aKpis .kpi { flex:1 1 140px; }
+  .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:9px; background:var(--azul2); color:var(--azul); font-weight:normal; }
+  @media (max-width:640px) { #aba-almox .linha > label { flex:1 1 100%; } #aba-almox .linha > label > input:not([type=checkbox]), #aba-almox .linha > label > select { width:100%; min-width:0 !important; font-size:16px; }
+    #aba-almox .painel-grade { grid-template-columns:1fr !important; } }
   .pergunta { position:sticky; bottom:0; z-index:5; background:#fff; margin-bottom:0; border:2px solid var(--azul); box-shadow:0 -4px 12px rgba(0,0,0,.12); }
   header .logo { height:38px; background:#fff; border-radius:6px; padding:4px 8px; }
   #login .logo { display:block; height:56px; margin:0 auto 12px; }
@@ -141,6 +150,13 @@
     <div class="grupo" data-grupo="manutencao">
       <h4>Manutenção</h4>
       <button data-aba="manutencao">Manutenção</button>
+    </div>
+    <div class="grupo" data-grupo="almox">
+      <h4>Almoxarifado</h4>
+      <button data-aba="almox" data-parte="estoque">Estoque</button>
+      <button data-aba="almox" data-parte="movimento">Entrada / Saída</button>
+      <button data-aba="almox" data-parte="contagem">Contagem</button>
+      <button data-aba="almox" data-parte="cadastro">Cadastro de itens</button>
     </div>
     <div class="grupo" data-grupo="sistema" data-admin>
       <h4>Sistema</h4>
@@ -535,7 +551,7 @@
           <label>Serviço do plano <select id="msPlano"></select></label>
           <label>O que foi feito <input id="msDesc" style="min-width:240px"></label>
           <label>Peças usadas <input id="msPecas" style="min-width:200px"></label>
-          <label>Valor (R$) <input id="msValor" inputmode="decimal" style="max-width:120px"></label>
+          <label>Valor (R$) <input id="msValor" inputmode="decimal" style="max-width:120px" title="Peça que saiu do almoxarifado já entra no custo pela saída: não some aqui."></label>
           <label>Quem fez <input id="msQuem"></label>
           <label>Nota ou foto (opcional) <input type="file" id="msNota" accept="image/*,application/pdf"></label>
           <button class="bt" id="btServico">Salvar serviço</button>
@@ -545,6 +561,99 @@
       <div class="card">
         <h3 style="margin-top:0">Histórico de serviços</h3>
         <div class="tabela" id="mHist"></div>
+      </div>
+    </section>
+    <section id="aba-almox" class="escondido">
+      <div id="aMsg"></div>
+      <div class="card linha" data-parte="estoque">
+        <label>Buscar item <input id="aBusca" placeholder="nome do item"></label>
+        <label>Categoria <select id="aCat"></select></label>
+        <label>Local <select id="aLocal"></select></label>
+        <button class="bt" id="btAlmox">Atualizar</button>
+        <button class="bt sec" id="btAlmoxPdf">Estoque (PDF)</button>
+      </div>
+      <div class="kpis" id="aKpis" data-parte="estoque"></div>
+      <div class="card" data-parte="estoque">
+        <h3 style="margin-top:0">Estoque</h3>
+        <div class="tabela" id="aEstoque"></div>
+      </div>
+      <div class="painel-grade" data-parte="estoque" style="grid-template-columns:1fr 1fr">
+        <div class="card">
+          <h3 style="margin-top:0">Atenção</h3>
+          <ul class="lista-alertas" id="aAlertas"></ul>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Ferramentas emprestadas</h3>
+          <div class="tabela" id="aEmprest"></div>
+        </div>
+      </div>
+      <div class="card" id="aForm" data-parte="movimento">
+        <h3 style="margin-top:0">Lançar entrada ou saída</h3>
+        <div class="linha">
+          <label>Data <input type="date" id="amData"></label>
+          <label>Item <select id="amItem" style="min-width:220px"></select></label>
+          <label>Movimento <select id="amTipo"><option value="saida">Saída (uso)</option><option value="entrada">Entrada (compra)</option><option value="emprestimo">Empréstimo de ferramenta</option><option value="devolucao">Devolução de ferramenta</option></select></label>
+          <label>Quantidade <input id="amQtd" inputmode="decimal" style="max-width:110px"></label>
+          <label id="amValorL">Valor unitário (R$) <input id="amValor" inputmode="decimal" style="max-width:120px"></label>
+          <label><span id="amPessoaT">Para quem</span> <input id="amPessoa"></label>
+          <label id="amMaqL">Máquina (se foi para uma) <select id="amMaq"></select></label>
+          <label>Observação <input id="amObs" style="min-width:200px"></label>
+          <label>Nota ou foto (opcional) <input type="file" id="amNota" accept="image/*,application/pdf"></label>
+          <button class="bt" id="btMov">Salvar movimento</button>
+        </div>
+        <div id="amSaldo" style="color:var(--suave);font-size:13px;margin-top:6px"></div>
+        <div id="amMsg"></div>
+      </div>
+      <div class="card" data-parte="movimento">
+        <h3 style="margin-top:0">Histórico de movimentos</h3>
+        <div class="linha">
+          <label>De <input type="date" id="ahDe"></label>
+          <label>Até <input type="date" id="ahAte"></label>
+          <label>Item <select id="ahItem"></select></label>
+        </div>
+        <div class="tabela" id="aHist" style="margin-top:10px"></div>
+      </div>
+      <div class="card" data-parte="contagem">
+        <h3 style="margin-top:0">Contagem do estoque</h3>
+        <p style="margin-top:0;color:var(--suave);font-size:13px">1) Imprima a lista e conte o que tem em cada prateleira. 2) Digite aqui o que contou (deixe em branco o que não contou). 3) Clique em <b>Salvar contagem</b>: a diferença entra como ajuste e fica guardada no histórico.</p>
+        <div class="linha">
+          <label>Categoria <select id="acCat"></select></label>
+          <button class="bt sec" id="btContagemPdf">Imprimir lista de contagem (PDF)</button>
+        </div>
+        <div class="tabela" id="aContagem" style="margin-top:10px"></div>
+        <div class="linha" style="margin-top:10px"><button class="bt" id="btContagem">Salvar contagem</button></div>
+        <div id="acMsg"></div>
+      </div>
+      <div class="card" id="aiForm" data-parte="cadastro">
+        <h3 style="margin-top:0" id="aiTitulo">Cadastrar item</h3>
+        <div class="linha">
+          <label>Nome do item <input id="aiNome" style="min-width:240px" placeholder="ex.: Filtro de óleo do compressor"></label>
+          <label>Categoria <select id="aiCat"></select></label>
+          <label>Unidade <input id="aiUnidade" list="aiUnidades" value="un" style="max-width:90px"></label>
+          <label>Local <input id="aiLocal" list="aiLocais" placeholder="ex.: Prateleira A2"></label>
+          <label>Quantidade mínima <input id="aiMin" inputmode="decimal" style="max-width:110px" placeholder="0"></label>
+          <label>Observação <input id="aiObs" style="min-width:200px"></label>
+          <label class="check"><input type="checkbox" id="aiFerr"> É ferramenta (pode ser emprestada)</label>
+        </div>
+        <datalist id="aiUnidades"><option value="un"><option value="L"><option value="kg"><option value="m"><option value="par"><option value="cx"><option value="pc"></datalist>
+        <datalist id="aiLocais"></datalist>
+        <div class="linha" style="margin-top:6px">
+          <button class="bt" id="btItem">Salvar item</button>
+          <button class="bt sec escondido" id="btItemNovo">Cancelar edição</button>
+        </div>
+        <div id="aiMsg"></div>
+      </div>
+      <div class="card" data-parte="cadastro">
+        <h3 style="margin-top:0">Itens cadastrados</h3>
+        <div class="tabela" id="aItens"></div>
+      </div>
+      <div class="card" data-parte="cadastro">
+        <h3 style="margin-top:0">Categorias</h3>
+        <div id="aCats" style="margin-bottom:10px"></div>
+        <div class="linha">
+          <label>Nova categoria <input id="acNova" placeholder="ex.: Material elétrico"></label>
+          <button class="bt sec" id="btCat">Incluir categoria</button>
+        </div>
       </div>
     </section>
     <section id="aba-fechamento" class="escondido">
@@ -747,6 +856,7 @@ async function iniciar() {
   // balança: só pesagem; encarregado do diesel: só diesel; administrador: tudo
   document.querySelector('#abas [data-grupo="diesel"]').classList.toggle("escondido", papel === "balanca");
   document.querySelector('#abas [data-grupo="manutencao"]').classList.toggle("escondido", papel === "balanca");
+  document.querySelector('#abas [data-grupo="almox"]').classList.toggle("escondido", papel === "balanca");
   // encarregado do diesel: do controle de pesagem, só o Painel, para consulta
   if (papel === "diesel") document.querySelectorAll('#abas [data-grupo="pesagem"] button').forEach(b => b.classList.toggle("escondido", b.dataset.aba !== "painel"));
   $("#login").classList.add("escondido"); $("#app").classList.remove("escondido");
@@ -784,7 +894,7 @@ $("#sair").addEventListener("click", async () => {
 document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("#abas button").forEach(x => x.classList.toggle("ativo", x === b));
   document.querySelectorAll("main > section").forEach(s => s.classList.toggle("escondido", s.id !== "aba-" + b.dataset.aba));
-  if (b.dataset.parte) document.querySelectorAll("#aba-diesel [data-parte]").forEach(c => c.classList.toggle("escondido", !c.dataset.parte.split(" ").includes(b.dataset.parte)));
+  if (b.dataset.parte) document.querySelectorAll(`#aba-${b.dataset.aba} [data-parte]`).forEach(c => c.classList.toggle("escondido", !c.dataset.parte.split(" ").includes(b.dataset.parte)));
   if (b.dataset.aba === "cadastros") carregarCadastros();
   if (b.dataset.aba === "conferir") mostrarConferir();
   if (b.dataset.aba === "anexar") carregarAnexos();
@@ -792,6 +902,7 @@ document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click
   if (b.dataset.aba === "envio") carregarEnvio();
   if (b.dataset.aba === "diesel") carregarDiesel();
   if (b.dataset.aba === "manutencao") carregarManut();
+  if (b.dataset.aba === "almox") carregarAlmox();
 }));
 
 // ------------------------------------------------------------------ anexar relatório
@@ -1687,7 +1798,7 @@ $("#pClientes").addEventListener("click", e => {
 $("#btBackup").addEventListener("click", async () => {
   msg("#backupMsg", "aviso", "Gerando backup…");
   try {
-    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "auditoria"];
+    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "almox_categorias", "almox_itens", "almox_movimentos", "auditoria"];
     const dados = {};
     for (const t of tabelas) {
       dados[t] = [];
@@ -2551,6 +2662,298 @@ $("#aba-diesel").addEventListener("click", async e => {
 });
 
 // ------------------------------------------------------------------ manutenção das máquinas próprias (query 016)
+// ------------------------------------------------------------------ almoxarifado
+let az = null;
+const SINAL_ALMOX = { entrada: 1, devolucao: 1, ajuste: 1, saida: -1, emprestimo: -1 };
+const NOME_MOV = { entrada: "Entrada (compra)", saida: "Saída", emprestimo: "Empréstimo", devolucao: "Devolução", ajuste: "Ajuste de contagem" };
+const qtdTxt = (n, u) => `${Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 })} ${u || ""}`.trim();
+async function carregarAlmox() {
+  if (!$("#ahAte").value) { const h = new Date(); $("#ahAte").value = iso(h); $("#ahDe").value = iso(new Date(h.getFullYear(), h.getMonth() - 1, 1)); }
+  if (!$("#amData").value) $("#amData").value = iso(new Date());
+  msg("#aMsg");
+  try {
+    const [cats, itens, movs, maquinas] = await Promise.all([todasLinhas("almox_categorias", "nome"), todasLinhas("almox_itens", "nome"),
+      todasLinhas("almox_movimentos", "id"), todasLinhas("maquinas", "nome")]);
+    az = { cats, itens, movs, maquinas };
+  } catch (e) {
+    return msg("#aMsg", "erro", /does not exist|schema cache|almox/i.test(e.message || "") ? "O almoxarifado ainda não foi ligado no banco. Rode a query 017 no Supabase." : erroTxt(e));
+  }
+  calcularAlmox();
+  mostrarAlmox();
+}
+// estoque de cada item = soma dos movimentos válidos; custo médio = média das compras com valor
+function calcularAlmox() {
+  const porItem = new Map(az.itens.map(i => [i.id, { saldo: 0, qCompra: 0, vCompra: 0, emprest: new Map() }]));
+  for (const m of az.movs) {
+    const x = porItem.get(m.item_id); if (!x || m.situacao !== "valida") continue;
+    const q = Number(m.quantidade);
+    x.saldo += SINAL_ALMOX[m.tipo] * q;
+    if (m.tipo === "entrada" && m.valor_unit != null) { x.qCompra += q; x.vCompra += q * Number(m.valor_unit); }
+    if (m.tipo === "emprestimo" || m.tipo === "devolucao") {
+      const k = normNome(m.pessoa), e = x.emprest.get(k) || { pessoa: (m.pessoa || "").trim(), qtd: 0, desde: null };
+      e.qtd += m.tipo === "emprestimo" ? q : -q;
+      if (m.tipo === "emprestimo" && (!e.desde || m.feito_em > e.desde)) e.desde = m.feito_em;
+      x.emprest.set(k, e);
+    }
+  }
+  for (const i of az.itens) {
+    const x = porItem.get(i.id);
+    i.saldo = Math.round(x.saldo * 1000) / 1000;
+    i.custo = x.qCompra ? x.vCompra / x.qCompra : null;
+    i.valor = i.custo != null && i.saldo > 0 ? i.saldo * i.custo : 0;
+    i.emprestimos = [...x.emprest.values()].filter(e => e.qtd > 0);
+    i.categoria = az.cats.find(c => c.id === i.categoria_id)?.nome || "Sem categoria";
+    i.baixo = i.ativo && Number(i.minimo) > 0 && i.saldo < Number(i.minimo);
+  }
+}
+const itensAtivos = () => az.itens.filter(i => i.ativo).sort((a, b) => a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome));
+function filtroAlmox() {
+  const b = normNome($("#aBusca").value), c = $("#aCat").value, l = $("#aLocal").value;
+  return itensAtivos().filter(i => (!b || normNome(i.nome).includes(b)) && (!c || String(i.categoria_id) === c) && (!l || (i.local || "") === l));
+}
+function opcoesSelect(sel, opcoes, primeira) {
+  const atual = $(sel).value;
+  $(sel).innerHTML = (primeira != null ? `<option value="">${primeira}</option>` : "") + opcoes.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join("");
+  if ([...$(sel).options].some(o => o.value === atual)) $(sel).value = atual;
+}
+function mostrarAlmox() {
+  const cats = az.cats.filter(c => c.ativo).map(c => [c.id, c.nome]);
+  const locais = [...new Set(az.itens.filter(i => i.ativo && i.local).map(i => i.local))].sort();
+  opcoesSelect("#aCat", cats, "Todas"); opcoesSelect("#acCat", cats, "Todas"); opcoesSelect("#aiCat", cats, "— escolha —");
+  opcoesSelect("#aLocal", locais.map(l => [l, l]), "Todos");
+  $("#aiLocais").innerHTML = locais.map(l => `<option value="${esc(l)}">`).join("");
+  const ativos = itensAtivos();
+  opcoesSelect("#amItem", ativos.map(i => [i.id, `${i.nome}${i.local ? " · " + i.local : ""}`]), "— escolha o item —");
+  opcoesSelect("#ahItem", az.itens.map(i => [i.id, i.nome]).sort((a, b) => a[1].localeCompare(b[1])), "Todos");
+  opcoesSelect("#amMaq", az.maquinas.filter(m => m.ativo !== false).map(m => [m.id, m.nome]), "—");
+  mostrarEstoque(); mostrarHistAlmox(); mostrarContagem(); mostrarCadastroAlmox(); ajustarFormMov();
+}
+function mostrarEstoque() {
+  const lista = filtroAlmox(), ativos = itensAtivos(), mes = iso(new Date()).slice(0, 7);
+  const baixos = ativos.filter(i => i.baixo), negativos = ativos.filter(i => i.saldo < 0);
+  const emprest = ativos.flatMap(i => i.emprestimos.map(e => ({ ...e, item: i })));
+  const saidasMes = az.movs.filter(m => m.situacao === "valida" && m.tipo === "saida" && m.feito_em.slice(0, 7) === mes);
+  const valorSaidas = saidasMes.reduce((t, m) => t + Number(m.quantidade) * Number(m.valor_unit || 0), 0);
+  const antigos = emprest.filter(e => e.desde && (Date.now() - new Date(e.desde + "T12:00:00")) / 864e5 > 7);
+  $("#aKpis").innerHTML = [
+    ["Itens cadastrados", ativos.length, `em ${new Set(ativos.map(i => i.categoria_id)).size} categoria(s)`],
+    ["Valor em estoque", real(ativos.reduce((t, i) => t + i.valor, 0)), "pelo custo médio de compra"],
+    ["Abaixo do mínimo", baixos.length, baixos.length ? "comprar antes de faltar" : "nada faltando", baixos.length ? "erro" : ""],
+    ["Ferramentas emprestadas", emprest.length, antigos.length ? `${antigos.length} há mais de 7 dias` : "nenhuma atrasada"],
+    ["Saídas no mês", real(valorSaidas), `${saidasMes.length} saída(s)`]]
+    .map(([t, v, d, c]) => `<div class="kpi" ${c ? 'style="border-color:var(--erro)"' : ""}><small>${t}</small><b ${c ? 'style="color:var(--erro)"' : ""}>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
+  $("#aEstoque").innerHTML = !lista.length ? `<div class="vazio">${ativos.length ? "Nenhum item com esse filtro." : "Nenhum item cadastrado. Comece pelo Cadastro de itens."}</div>` :
+    `<table><tr><th>Item</th><th class="n">Tem</th><th class="n">Mínimo</th><th class="n">Custo médio</th><th class="n">Valor</th><th></th></tr>` +
+    lista.map(i => `<tr><td style="white-space:normal;min-width:150px">${esc(i.nome)}${i.ferramenta ? ' <small class="tag">ferramenta</small>' : ""}<br><small style="color:var(--suave)">${esc(i.categoria)} · ${esc(i.local || "sem local")}</small>${i.emprestimos.length ? `<br><small style="color:var(--aviso)">emprestada: ${i.emprestimos.map(e => `${qtdTxt(e.qtd, i.unidade)} com ${esc(e.pessoa)}`).join(", ")}</small>` : ""}</td>` +
+      `<td class="n" ${i.baixo || i.saldo < 0 ? 'style="color:var(--erro);font-weight:600"' : ""}>${qtdTxt(i.saldo, i.unidade)}</td>` +
+      `<td class="n">${Number(i.minimo) ? qtdTxt(i.minimo, i.unidade) : "—"}</td><td class="n">${real(i.custo)}</td><td class="n">${i.valor ? real(i.valor) : "—"}</td>` +
+      `<td style="white-space:nowrap"><button class="mini" data-amov="entrada" data-aitem="${i.id}">Entrada</button> <button class="mini" data-amov="${i.ferramenta ? "emprestimo" : "saida"}" data-aitem="${i.id}">${i.ferramenta ? "Emprestar" : "Saída"}</button></td></tr>`).join("") +
+    `<tr class="dia"><td colspan="4">TOTAL DOS ITENS DA LISTA (${lista.length})</td><td class="n">${real(lista.reduce((t, i) => t + i.valor, 0))}</td><td></td></tr></table>`;
+  const al = [];
+  if (baixos.length) al.push(`<b>${baixos.length} item(ns) abaixo do mínimo:</b> ${baixos.map(i => `${esc(i.nome)} (tem ${qtdTxt(i.saldo, i.unidade)}, mínimo ${qtdTxt(i.minimo, i.unidade)})`).join("; ")}.`);
+  negativos.forEach(i => al.push(`<b>${esc(i.nome)}</b> está negativo (${qtdTxt(i.saldo, i.unidade)}): faltou lançar uma entrada ou a contagem está errada.`));
+  antigos.forEach(e => al.push(`${esc(e.item.nome)} emprestada para ${esc(e.pessoa)} desde ${br(e.desde)}.`));
+  const semCusto = ativos.filter(i => i.saldo > 0 && i.custo == null).length;
+  if (semCusto) al.push(`${semCusto} item(ns) com estoque e sem valor de compra: o valor em estoque fica menor que o real.`);
+  $("#aAlertas").innerHTML = al.length ? al.map(x => `<li>${x}</li>`).join("") : "<li>Tudo em dia.</li>";
+  $("#aEmprest").innerHTML = !emprest.length ? '<div class="vazio">Nenhuma ferramenta emprestada.</div>' :
+    `<table><tr><th>Ferramenta</th><th>Com quem</th><th class="n">Qtd</th><th>Desde</th><th></th></tr>` +
+    emprest.sort((a, b) => (a.desde || "") < (b.desde || "") ? -1 : 1).map(e => `<tr><td>${esc(e.item.nome)}</td><td>${esc(e.pessoa)}</td><td class="n">${qtdTxt(e.qtd, e.item.unidade)}</td><td>${br(e.desde)}</td>` +
+      `<td><button class="mini" data-amov="devolucao" data-aitem="${e.item.id}" data-apessoa="${esc(e.pessoa)}" data-aqtd="${e.qtd}">Devolvida</button></td></tr>`).join("") + "</table>";
+}
+function mostrarHistAlmox() {
+  const de = $("#ahDe").value, ate = $("#ahAte").value, it = $("#ahItem").value, adm = papel === "admin";
+  const lista = az.movs.filter(m => m.feito_em >= de && m.feito_em <= ate && (!it || String(m.item_id) === it))
+    .sort((a, b) => a.feito_em < b.feito_em ? 1 : a.feito_em > b.feito_em ? -1 : b.id - a.id);
+  const item = id => az.itens.find(i => i.id === id) || {}, maq = id => az.maquinas.find(m => m.id === id)?.nome;
+  $("#aHist").innerHTML = !lista.length ? '<div class="vazio">Nenhum movimento no período.</div>' :
+    `<table><tr><th>Data</th><th>Item</th><th class="n">Quantidade</th><th class="n">Valor</th><th>Para / de</th><th>Observação</th><th></th></tr>` +
+    lista.map(m => { const i = item(m.item_id), q = SINAL_ALMOX[m.tipo] * Number(m.quantidade);
+      return `<tr class="${m.situacao === "cancelada" ? "cancelada" : ""}"><td>${br(m.feito_em).slice(0, 5)}</td><td style="white-space:normal;min-width:140px">${esc(i.nome)}<br><small style="color:var(--suave)">${NOME_MOV[m.tipo]}</small>${m.situacao === "cancelada" ? ` <small class="alerta">cancelado: ${esc(m.motivo_cancelamento)}</small>` : ""}</td>` +
+        `<td class="n" style="color:${q < 0 ? "var(--erro)" : "var(--ok)"}">${q > 0 ? "+" : "−"}${qtdTxt(Math.abs(q), i.unidade)}</td><td class="n">${m.valor_unit != null ? real(Number(m.quantidade) * Number(m.valor_unit)) : "—"}</td>` +
+        `<td>${esc([m.pessoa, maq(m.maquina_id)].filter(Boolean).join(" · ") || "—")}</td><td style="white-space:normal">${esc(m.observacao || "")}</td>` +
+        `<td style="white-space:nowrap">${m.nota_caminho ? `<button class="mini" data-anota="${esc(m.nota_caminho)}">Ver nota</button>` : ""}${adm && m.situacao === "valida" ? ` <button class="mini" data-acancelar="${m.id}">Cancelar</button>` : ""}</td></tr>`; }).join("") + "</table>";
+}
+function itensContagem() { const c = $("#acCat").value; return itensAtivos().filter(i => !c || String(i.categoria_id) === c).sort((a, b) => (a.local || "").localeCompare(b.local || "") || a.nome.localeCompare(b.nome)); }
+function mostrarContagem() {
+  const lista = itensContagem();
+  $("#aContagem").innerHTML = !lista.length ? '<div class="vazio">Nenhum item cadastrado.</div>' :
+    `<table><tr><th>Local</th><th>Item</th><th class="n">No sistema</th><th class="n">Contado</th></tr>` +
+    lista.map(i => `<tr><td>${esc(i.local || "—")}</td><td>${esc(i.nome)}</td><td class="n">${qtdTxt(i.saldo, i.unidade)}</td><td class="n"><input data-acont="${i.id}" inputmode="decimal" placeholder="${esc(i.unidade)}"></td></tr>`).join("") + "</table>";
+}
+function mostrarCadastroAlmox() {
+  const lista = [...az.itens].sort((a, b) => (b.ativo - a.ativo) || a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome));
+  $("#aItens").innerHTML = !lista.length ? '<div class="vazio">Nenhum item cadastrado ainda.</div>' :
+    `<table><tr><th>Item</th><th>Categoria</th><th>Unidade</th><th>Local</th><th class="n">Mínimo</th><th>Ferramenta</th><th class="n">Tem</th><th></th></tr>` +
+    lista.map(i => `<tr class="${i.ativo ? "" : "cancelada"}"><td>${esc(i.nome)}${i.ativo ? "" : ' <small class="alerta">desativado</small>'}${i.observacao ? `<br><small style="color:var(--suave)">${esc(i.observacao)}</small>` : ""}</td><td>${esc(i.categoria)}</td><td>${esc(i.unidade)}</td><td>${esc(i.local || "—")}</td>` +
+      `<td class="n">${Number(i.minimo) ? qtdTxt(i.minimo, i.unidade) : "—"}</td><td>${i.ferramenta ? "sim" : ""}</td><td class="n">${qtdTxt(i.saldo, i.unidade)}</td>` +
+      `<td style="white-space:nowrap"><button class="mini" data-aeditar="${i.id}">Editar</button> <button class="mini" data-aativo="${i.id}">${i.ativo ? "Desativar" : "Reativar"}</button></td></tr>`).join("") + "</table>";
+  $("#aCats").innerHTML = az.cats.filter(c => c.ativo).map(c => `<span class="tag" style="margin:0 6px 6px 0">${esc(c.nome)} (${az.itens.filter(i => i.ativo && i.categoria_id === c.id).length})</span>`).join("");
+}
+// o formulário muda conforme o movimento
+function ajustarFormMov() {
+  const t = $("#amTipo").value, i = az?.itens.find(x => String(x.id) === $("#amItem").value);
+  $("#amValorL").classList.toggle("escondido", t !== "entrada");
+  $("#amMaqL").classList.toggle("escondido", t !== "saida");
+  $("#amPessoaT").textContent = { entrada: "Fornecedor", saida: "Para quem", emprestimo: "Com quem fica", devolucao: "Quem devolveu" }[t];
+  $("#amSaldo").innerHTML = i ? `No estoque: <b>${qtdTxt(i.saldo, i.unidade)}</b>${i.custo != null ? ` · custo médio ${real(i.custo)} por ${esc(i.unidade)}` : ""}${i.emprestimos.length ? ` · emprestada: ${i.emprestimos.map(e => `${qtdTxt(e.qtd, i.unidade)} com ${esc(e.pessoa)}`).join(", ")}` : ""}` : "";
+}
+$("#amTipo").addEventListener("change", ajustarFormMov);
+// categoria Ferramentas já marca "é ferramenta"
+$("#aiCat").addEventListener("change", e => { if (/ferrament/i.test(e.target.selectedOptions[0]?.textContent || "")) $("#aiFerr").checked = true; });
+$("#amItem").addEventListener("change", ajustarFormMov);
+$("#btAlmox").addEventListener("click", carregarAlmox);
+for (const i of ["#aBusca", "#aCat", "#aLocal"]) $(i).addEventListener("input", () => az && mostrarEstoque());
+for (const i of ["#ahDe", "#ahAte", "#ahItem"]) $(i).addEventListener("change", () => az && mostrarHistAlmox());
+$("#acCat").addEventListener("change", () => az && mostrarContagem());
+const irParte = parte => document.querySelector(`#abas [data-aba="almox"][data-parte="${parte}"]`).click();
+$("#aba-almox").addEventListener("click", async e => {
+  const d = e.target.dataset;
+  if (d.anota) return abrirFotoDiesel(d.anota);
+  if (d.amov) {
+    for (const i of ["#amQtd", "#amValor", "#amPessoa", "#amObs", "#amNota"]) $(i).value = "";
+    $("#amMaq").value = ""; $("#amItem").value = d.aitem; $("#amTipo").value = d.amov;
+    if (d.apessoa) $("#amPessoa").value = d.apessoa;
+    if (d.aqtd) $("#amQtd").value = String(Number(d.aqtd)).replace(".", ",");
+    irParte("movimento"); ajustarFormMov(); msg("#amMsg");
+    $("#aForm").scrollIntoView({ behavior: "smooth" }); return $("#amQtd").focus();
+  }
+  if (d.acancelar) {
+    const motivo = prompt("Motivo do cancelamento deste movimento:");
+    if (!motivo || !motivo.trim()) return;
+    const { error } = await db.rpc("cancelar_movimento_almox", { p_id: Number(d.acancelar), p_motivo: motivo.trim() });
+    if (error) return alert(error.message);
+    return carregarAlmox();
+  }
+  if (d.aeditar) {
+    const i = az.itens.find(x => String(x.id) === d.aeditar);
+    $("#aiForm").dataset.id = i.id; $("#aiTitulo").textContent = `Editar item: ${i.nome}`;
+    $("#aiNome").value = i.nome; $("#aiCat").value = i.categoria_id || ""; $("#aiUnidade").value = i.unidade; $("#aiLocal").value = i.local || "";
+    $("#aiMin").value = Number(i.minimo) ? String(Number(i.minimo)).replace(".", ",") : ""; $("#aiObs").value = i.observacao || ""; $("#aiFerr").checked = i.ferramenta;
+    $("#btItemNovo").classList.remove("escondido"); msg("#aiMsg");
+    $("#aiForm").scrollIntoView({ behavior: "smooth" }); return $("#aiNome").focus();
+  }
+  if (d.aativo) {
+    const i = az.itens.find(x => String(x.id) === d.aativo);
+    const pend = [i.saldo ? `ainda tem ${qtdTxt(i.saldo, i.unidade)} no sistema` : "", i.emprestimos.length ? `está emprestada com ${i.emprestimos.map(e => e.pessoa).join(", ")}` : ""].filter(Boolean).join(" e ");
+    if (i.ativo && !confirm(`Desativar "${i.nome}"?${pend ? `\n\nAtenção: ${pend}.` : ""}\n\nEle sai do estoque e das listas, mas o histórico continua guardado. Dá para reativar depois.`)) return;
+    const { error } = await db.from("almox_itens").update({ ativo: !i.ativo }).eq("id", i.id);
+    if (error) return alert(erroTxt(error));
+    return carregarAlmox();
+  }
+});
+function limparFormItem() {
+  delete $("#aiForm").dataset.id; $("#aiTitulo").textContent = "Cadastrar item";
+  for (const i of ["#aiNome", "#aiLocal", "#aiMin", "#aiObs"]) $(i).value = "";
+  $("#aiUnidade").value = "un"; $("#aiFerr").checked = false; $("#btItemNovo").classList.add("escondido");
+}
+$("#btItemNovo").addEventListener("click", () => { limparFormItem(); msg("#aiMsg"); });
+$("#btItem").addEventListener("click", async () => {
+  const nome = $("#aiNome").value.trim().replace(/\s+/g, " "), min = numero($("#aiMin").value.replace(/\./g, "")), id = $("#aiForm").dataset.id;
+  if (!nome) return msg("#aiMsg", "erro", "Escreva o nome do item.");
+  if (!$("#aiCat").value) return msg("#aiMsg", "erro", "Escolha a categoria.");
+  if (!$("#aiUnidade").value.trim()) return msg("#aiMsg", "erro", "Informe a unidade (un, L, kg...).");
+  if (min != null && !(min >= 0)) return msg("#aiMsg", "erro", "A quantidade mínima precisa ser um número.");
+  const igual = az.itens.find(i => normNome(i.nome) === normNome(nome) && String(i.id) !== id);
+  if (igual) return msg("#aiMsg", "erro", `Já existe o item "${esc(igual.nome)}"${igual.ativo ? "" : " (desativado: reative na lista abaixo)"}.`);
+  const dados = { nome, categoria_id: Number($("#aiCat").value), unidade: $("#aiUnidade").value.trim(), local: $("#aiLocal").value.trim() || null,
+    minimo: min || 0, ferramenta: $("#aiFerr").checked, observacao: $("#aiObs").value.trim() || null };
+  $("#btItem").disabled = true;
+  const { error } = id ? await db.from("almox_itens").update(dados).eq("id", Number(id)) : await db.from("almox_itens").insert({ ...dados, ativo: true });
+  $("#btItem").disabled = false;
+  if (error) return msg("#aiMsg", "erro", "Não foi salvo. " + erroTxt(error));
+  limparFormItem(); await carregarAlmox();
+  msg("#aiMsg", "ok", id ? "Item alterado." : `Item "${esc(nome)}" cadastrado. Para lançar o que já tem dele, use Contagem ou Entrada.`);
+});
+$("#btCat").addEventListener("click", async () => {
+  const nome = $("#acNova").value.trim().replace(/\s+/g, " ");
+  if (!nome) return;
+  if (az.cats.some(c => normNome(c.nome) === normNome(nome))) return alert("Essa categoria já existe.");
+  const { error } = await db.from("almox_categorias").insert({ nome, ativo: true });
+  if (error) return alert(erroTxt(error));
+  $("#acNova").value = ""; carregarAlmox();
+});
+$("#btMov").addEventListener("click", async () => {
+  const t = $("#amTipo").value, i = az?.itens.find(x => String(x.id) === $("#amItem").value);
+  const q = numero($("#amQtd").value.replace(/\./g, "")), v = numero($("#amValor").value.replace(/\./g, "")), pessoa = $("#amPessoa").value.trim();
+  if (!$("#amData").value) return msg("#amMsg", "erro", "Informe a data.");
+  if (!i) return msg("#amMsg", "erro", "Escolha o item.");
+  if (!(q > 0)) return msg("#amMsg", "erro", "Informe a quantidade (só números, maior que zero).");
+  if (t === "entrada" && v != null && !(v >= 0)) return msg("#amMsg", "erro", "Confira o valor unitário: use só números.");
+  if ((t === "emprestimo" || t === "devolucao") && !pessoa) return msg("#amMsg", "erro", t === "emprestimo" ? "Escreva com quem a ferramenta fica." : "Escreva quem devolveu.");
+  if ((t === "saida" || t === "emprestimo") && q > i.saldo && !confirm(`O sistema mostra só ${qtdTxt(i.saldo, i.unidade)} de "${i.nome}". Lançar ${qtdTxt(q, i.unidade)} deixa o estoque negativo.\n\nLançar assim mesmo? (depois confira com uma contagem)`)) return;
+  if (t === "devolucao") {
+    const aberto = i.emprestimos.find(e => normNome(e.pessoa) === normNome(pessoa));
+    if (!aberto && !confirm(`Não há empréstimo de "${i.nome}" com ${pessoa}. Lançar a devolução assim mesmo?`)) return;
+  }
+  $("#btMov").disabled = true;
+  try {
+    const nota = await enviarFotoDiesel("almoxarifado", $("#amNota").files[0]);
+    const { error } = await db.from("almox_movimentos").insert({ item_id: i.id, feito_em: $("#amData").value, tipo: t, quantidade: q,
+      valor_unit: t === "entrada" ? v : t === "saida" || t === "emprestimo" ? (i.custo != null ? Math.round(i.custo * 100) / 100 : null) : null,
+      pessoa: pessoa || null, maquina_id: t === "saida" && $("#amMaq").value ? Number($("#amMaq").value) : null,
+      observacao: $("#amObs").value.trim() || null, nota_caminho: nota, situacao: "valida", registrado_por: usuario.id });
+    if (error) throw error;
+    for (const x of ["#amQtd", "#amValor", "#amPessoa", "#amObs", "#amNota"]) $(x).value = "";
+    $("#amMaq").value = "";
+    await carregarAlmox();
+    const novo = az.itens.find(x => x.id === i.id);
+    msg("#amMsg", "ok", `Movimento salvo. Agora tem ${qtdTxt(novo.saldo, novo.unidade)} de ${esc(novo.nome)}.`);
+  } catch (e) { msg("#amMsg", "erro", "Não foi salvo. " + erroTxt(e)); }
+  $("#btMov").disabled = false;
+});
+$("#btContagem").addEventListener("click", async () => {
+  const difs = [];
+  for (const inp of document.querySelectorAll("[data-acont]")) {
+    if (!inp.value.trim()) continue;
+    const c = numero(inp.value.replace(/\./g, "")), i = az.itens.find(x => String(x.id) === inp.dataset.acont);
+    if (!(c >= 0)) return msg("#acMsg", "erro", `Confira o número digitado em "${esc(i.nome)}".`);
+    const d = Math.round((c - i.saldo) * 1000) / 1000;
+    if (d) difs.push({ i, c, d });
+  }
+  if (!difs.length) return msg("#acMsg", "ok", "Nenhuma diferença: o que foi contado bate com o sistema.");
+  if (!confirm(`Lançar ${difs.length} ajuste(s)?\n\n${difs.map(x => `${x.i.nome}: sistema ${qtdTxt(x.i.saldo, x.i.unidade)}, contado ${qtdTxt(x.c, x.i.unidade)} (${x.d > 0 ? "+" : ""}${qtdTxt(x.d, x.i.unidade)})`).join("\n")}`)) return;
+  $("#btContagem").disabled = true;
+  const hoje = iso(new Date());
+  const { error } = await db.from("almox_movimentos").insert(difs.map(x => ({ item_id: x.i.id, feito_em: hoje, tipo: "ajuste", quantidade: x.d,
+    observacao: `Contagem: sistema ${qtdTxt(x.i.saldo, x.i.unidade)}, contado ${qtdTxt(x.c, x.i.unidade)}`, situacao: "valida", registrado_por: usuario.id })));
+  $("#btContagem").disabled = false;
+  if (error) return msg("#acMsg", "erro", "Não foi salvo. " + erroTxt(error));
+  await carregarAlmox();
+  msg("#acMsg", "ok", `${difs.length} ajuste(s) lançado(s). O estoque já está igual à contagem.`);
+});
+function pdfAlmox(contagem) {
+  const lista = contagem ? itensContagem() : filtroAlmox();
+  if (!lista.length) return msg(contagem ? "#acMsg" : "#aMsg", "erro", "Nenhum item para imprimir.");
+  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
+  const azul = [31, 58, 95], W = 210, M = 12, num = `${contagem ? "CONT" : "EST"}-${iso(new Date()).replace(/-/g, "")}`;
+  doc.addImage(LOGO, "PNG", M, 7, 42, 12);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(...azul); doc.text(EMPRESA, M + 46, 12);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(110); doc.text(ENDERECO, M + 46, 17);
+  doc.setFontSize(6.5); doc.text("DOCUMENTO", W - M, 25, { align: "right" });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(0); doc.text(num, W - M, 29, { align: "right" });
+  doc.setDrawColor(...azul); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21);
+  doc.setFontSize(13); doc.text(contagem ? "Lista de contagem do almoxarifado" : "Estoque do almoxarifado", M, 29);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
+  doc.text(contagem ? `Data da contagem: ____/____/______   Contado por: ______________________________` : `Posição em ${new Date().toLocaleDateString("pt-BR")} · ${lista.length} item(ns)`, M, 36);
+  const rodape = () => { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(130);
+    doc.text(`${num} · emitido em ${new Date().toLocaleString("pt-BR")}`, M, 289);
+    doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 289, { align: "right" }); };
+  const estilo = { margin: { left: M, right: M, bottom: 14 }, styles: { fontSize: 8.5, cellPadding: 2 }, headStyles: { fillColor: azul, textColor: 255 },
+    footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" }, alternateRowStyles: { fillColor: [244, 245, 247] }, didDrawPage: rodape };
+  if (contagem) doc.autoTable({ ...estilo, startY: 41, head: [["Local", "Item", "Unid.", "No sistema", "Contado", "Obs."]],
+    body: lista.map(i => [i.local || "—", i.nome, i.unidade, qtdTxt(i.saldo), "", ""]),
+    columnStyles: { 3: { halign: "right" }, 4: { cellWidth: 26 }, 5: { cellWidth: 34 } }, bodyStyles: { minCellHeight: 8 } });
+  else doc.autoTable({ ...estilo, startY: 41, head: [["Item", "Categoria", "Local", "Tem", "Mínimo", "Custo médio", "Valor"]],
+    body: lista.map(i => [i.nome, i.categoria, i.local || "—", qtdTxt(i.saldo, i.unidade), Number(i.minimo) ? qtdTxt(i.minimo, i.unidade) : "—", real(i.custo), i.valor ? real(i.valor) : "—"]),
+    foot: [["TOTAL", "", "", "", "", "", real(lista.reduce((t, i) => t + i.valor, 0))]],
+    columnStyles: { 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" } },
+    didParseCell: c => { if (c.section === "body" && c.column.index === 3 && (lista[c.row.index].baixo || lista[c.row.index].saldo < 0)) { c.cell.styles.textColor = [180, 35, 24]; c.cell.styles.fontStyle = "bold"; } } });
+  doc.save(`${contagem ? "contagem" : "estoque"}-almoxarifado-${iso(new Date())}.pdf`);
+}
+$("#btAlmoxPdf").addEventListener("click", () => pdfAlmox(false));
+$("#btContagemPdf").addEventListener("click", () => pdfAlmox(true));
+
 let mz = null;
 const AVISO_MANUT_H = 50;   // avisa ao entrar quando faltar isso ou menos para a manutenção
 const horasTxt = n => n == null ? "—" : lit(n) + " h";
@@ -2563,7 +2966,9 @@ async function carregarManut() {
       todasLinhas("maquinas", "nome"), todasLinhas("manut_plano", "id"), todasLinhas("manut_servicos", "feito_em")]);
     dz = { ...dz, cargas, abs, maquinas };
     calcularConsumo();
-    mz = { maquinas, plano, servicos };
+    // peças que saíram do almoxarifado para a máquina (sem a 017, fica vazio)
+    const pecas = await todasLinhas("almox_movimentos", "id").catch(() => []);
+    mz = { maquinas, plano, servicos, pecas };
   } catch (e) {
     return msg("#mMsg", "erro", /does not exist|schema cache|propria/i.test(e.message || "") ? "A manutenção ainda não foi ligada no banco. Rode a query 016 no Supabase." : erroTxt(e));
   }
@@ -2636,14 +3041,16 @@ function mostrarManut() {
   const vencidas = plano.filter(p => p.falta != null && p.falta < 0), proximas = plano.filter(p => p.falta != null && p.falta >= 0 && p.falta <= AVISO_MANUT_H);
   // custos do período
   const servPer = servM.filter(s => s.situacao === "valida" && s.feito_em >= de && s.feito_em <= ate);
-  const custoManut = servPer.reduce((t, s) => t + Number(s.valor || 0), 0);
+  const pecasPer = mz.pecas.filter(p => p.maquina_id === id && p.tipo === "saida" && p.situacao === "valida" && p.feito_em >= de && p.feito_em <= ate);
+  const custoPecas = pecasPer.reduce((t, p) => t + Number(p.quantidade) * Number(p.valor_unit || 0), 0);
+  const custoManut = servPer.reduce((t, s) => t + Number(s.valor || 0), 0) + custoPecas;
   const absPer = absM.filter(a => { const d = dataBR(a.abastecido_em); return d >= de && d <= ate; });
   const rd = resumoDiesel(absPer), horas = rd.horas || 0;
   const porHora = v => horas ? real(v / horas) + " por hora" : "sem horas no período";
   $("#mKpis").innerHTML = [
     ["Horímetro atual", horasTxt(hAtual), ultAbs ? `do último abastecimento (${dataHora(ultAbs.abastecido_em).slice(0, 5)})` : "nenhum abastecimento lançado"],
     ["Manutenções vencidas", vencidas.length, proximas.length ? `e ${proximas.length} vence(m) nas próximas ${AVISO_MANUT_H} h` : `nenhuma vencendo nas próximas ${AVISO_MANUT_H} h`, vencidas.length ? "erro" : ""],
-    ["Custo de manutenção", real(custoManut), `no período · ${porHora(custoManut)}`],
+    ["Custo de manutenção", real(custoManut), `no período · ${porHora(custoManut)}${custoPecas ? ` · inclui ${real(custoPecas)} de peças do almoxarifado` : ""}`],
     ["Custo de diesel", real(rd.custo), `no período · ${lit(rd.litros)} L${rd.semValor ? ` (${lit(rd.semValor)} L sem valor)` : ""}`],
     ["Custo total da máquina", real(custoManut + rd.custo), horas ? `${porHora(custoManut + rd.custo)} trabalhada (${lit(horas)} h)` : "sem horas no período"]]
     .map(([t, v, d, c]) => `<div class="kpi" ${c ? 'style="border-color:var(--erro)"' : ""}><small>${t}</small><b ${c ? 'style="color:var(--erro)"' : ""}>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
@@ -2679,7 +3086,7 @@ function mostrarManut() {
     hist.map(s => `<tr class="${s.situacao === "cancelada" ? "cancelada" : ""}"><td>${br(s.feito_em)}</td><td class="n">${horasTxt(s.horimetro)}</td><td>${s.tipo === "corretiva" ? '<span style="color:var(--erro)">Conserto</span>' : "Preventiva"}</td>` +
       `<td>${esc(s.descricao)}${s.situacao === "cancelada" ? ` <small class="alerta">cancelado: ${esc(s.motivo_cancelamento)}</small>` : ""}</td><td>${esc(s.pecas || "—")}</td><td class="n">${real(s.valor)}</td><td>${esc(s.quem_fez || "—")}</td>` +
       `<td style="white-space:nowrap">${s.nota_caminho ? `<button class="mini" data-mmanual="${esc(s.nota_caminho)}">Ver nota</button>` : ""}${adm && s.situacao === "valida" ? ` <button class="mini" data-mcancelar="${s.id}">Cancelar</button>` : ""}</td></tr>`).join("") +
-    `<tr class="dia"><td colspan="5">TOTAL NO PERÍODO</td><td class="n">${real(custoManut)}</td><td></td><td></td></tr></table>`;
+    `<tr class="dia"><td colspan="5">TOTAL NO PERÍODO</td><td class="n">${real(custoManut - custoPecas)}</td><td></td><td></td></tr></table>`;
 }
 
 $("#btManut").addEventListener("click", carregarManut);
