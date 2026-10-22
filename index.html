@@ -750,7 +750,7 @@ async function iniciar() {
   // encarregado do diesel: do controle de pesagem, só o Painel, para consulta
   if (papel === "diesel") document.querySelectorAll('#abas [data-grupo="pesagem"] button').forEach(b => b.classList.toggle("escondido", b.dataset.aba !== "painel"));
   $("#login").classList.add("escondido"); $("#app").classList.remove("escondido");
-  if (papel !== "balanca") enviarFila();
+  if (papel !== "balanca") { enviarFila(); avisoManutEntrada(); }
   if (papel === "diesel") {
     aplicarAtalhoPainel("mes");
     document.querySelector('#abas [data-parte="abastecer"]').click();
@@ -2552,6 +2552,7 @@ $("#aba-diesel").addEventListener("click", async e => {
 
 // ------------------------------------------------------------------ manutenção das máquinas próprias (query 016)
 let mz = null;
+const AVISO_MANUT_H = 50;   // avisa ao entrar quando faltar isso ou menos para a manutenção
 const horasTxt = n => n == null ? "—" : lit(n) + " h";
 async function carregarManut() {
   if (!$("#mAte").value) { const h = new Date(); $("#mAte").value = iso(h); $("#mDe").value = iso(new Date(h.getFullYear(), h.getMonth() - 2, 1)); }
@@ -2575,6 +2576,45 @@ async function carregarManut() {
   mostrarManut();
 }
 
+// ao entrar: administrador e diesel veem as manutenções que vencem em até AVISO_MANUT_H horas
+async function avisoManutEntrada() {
+  if (!navigator.onLine) return;
+  try {
+    const [maqs, plano, servicos] = await Promise.all([db.from("maquinas").select("id,nome").eq("propria", true), db.from("manut_plano").select("*").eq("ativo", true),
+      db.from("manut_servicos").select("maquina_id,plano_id,horimetro,situacao").eq("situacao", "valida")]);
+    if (maqs.error || plano.error || servicos.error || !plano.data.length) return;   // sem a 016 ou sem plano: não avisa
+    const itens = [];
+    for (const m of maqs.data) {
+      const { data: ab } = await db.from("diesel_abastecimentos").select("horimetro").eq("maquina_id", m.id).eq("situacao", "valida").not("horimetro", "is", null).order("horimetro", { ascending: false }).limit(1);
+      const hs = [...(ab || []), ...servicos.data.filter(s => s.maquina_id === m.id && s.horimetro != null)].map(x => Number(x.horimetro));
+      if (!hs.length) continue;
+      const atual = Math.max(...hs);
+      for (const p of plano.data.filter(p => p.maquina_id === m.id)) {
+        const ult = Math.max(-1, ...servicos.data.filter(s => s.plano_id === p.id && s.horimetro != null).map(s => Number(s.horimetro)));
+        if (ult < 0) continue;
+        const falta = ult + Number(p.intervalo_h) - atual;
+        if (falta <= AVISO_MANUT_H) itens.push({ maq: m.nome, servico: p.servico, falta, proxima: ult + Number(p.intervalo_h), atual });
+      }
+    }
+    if (!itens.length) return;
+    itens.sort((a, b) => a.falta - b.falta);
+    const caixa = document.createElement("div");
+    caixa.id = "avisoManut";
+    caixa.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000";
+    caixa.innerHTML = `<div class="card" style="background:#fff;max-width:460px;width:100%;margin:0;box-shadow:0 10px 30px rgba(0,0,0,.3);border-top:5px solid ${itens[0].falta < 0 ? "var(--erro)" : "var(--aviso)"}">
+      <h3 style="margin-top:0">🔧 Manutenção chegando</h3>
+      <p style="margin-top:0">${itens.length > 1 ? "Estes serviços vencem" : "Este serviço vence"} em ${AVISO_MANUT_H} horas ou menos, ou já passou da hora:</p>
+      <ul style="padding-left:18px;margin:0 0 12px">${itens.map(i => `<li style="margin-bottom:6px"><b>${esc(i.maq)}</b>: ${esc(i.servico)}<br>${i.falta < 0
+        ? `<span style="color:var(--erro);font-weight:600">atrasada ${lit(-i.falta)} h</span>` : `<span style="color:var(--aviso);font-weight:600">faltam ${lit(i.falta)} h</span>`}
+        <small style="color:var(--suave)"> · fazer com ${lit(i.proxima)} h (agora ${lit(i.atual)} h)</small></li>`).join("")}</ul>
+      <p style="font-size:13px;color:var(--suave)">Quando fizer, lance na aba Manutenção com o botão <b>Feito</b>.</p>
+      <div class="linha"><button class="bt" id="avisoManutAbrir">Abrir Manutenção</button><button class="bt sec" id="avisoManutOk">Entendi</button></div></div>`;
+    document.body.appendChild(caixa);
+    caixa.querySelector("#avisoManutOk").onclick = () => caixa.remove();
+    caixa.querySelector("#avisoManutAbrir").onclick = () => { caixa.remove(); document.querySelector('#abas [data-aba="manutencao"]').click(); };
+  } catch { /* sem internet ou sem a 016: segue sem aviso */ }
+}
+
 // situação de cada serviço do plano: último feito (pelo histórico) e quanto falta
 function situacaoPlano(maqId, atual) {
   const feitos = mz.servicos.filter(s => s.maquina_id === maqId && s.situacao === "valida" && s.plano_id != null && s.horimetro != null);
@@ -2593,7 +2633,7 @@ function mostrarManut() {
   const hAtual = atual >= 0 ? atual : null;
   const ultAbs = absM.reduce((u, a) => !u || a.abastecido_em > u.abastecido_em ? a : u, null);
   const plano = situacaoPlano(id, hAtual);
-  const vencidas = plano.filter(p => p.falta != null && p.falta < 0), proximas = plano.filter(p => p.falta != null && p.falta >= 0 && p.falta <= 80);
+  const vencidas = plano.filter(p => p.falta != null && p.falta < 0), proximas = plano.filter(p => p.falta != null && p.falta >= 0 && p.falta <= AVISO_MANUT_H);
   // custos do período
   const servPer = servM.filter(s => s.situacao === "valida" && s.feito_em >= de && s.feito_em <= ate);
   const custoManut = servPer.reduce((t, s) => t + Number(s.valor || 0), 0);
@@ -2602,14 +2642,14 @@ function mostrarManut() {
   const porHora = v => horas ? real(v / horas) + " por hora" : "sem horas no período";
   $("#mKpis").innerHTML = [
     ["Horímetro atual", horasTxt(hAtual), ultAbs ? `do último abastecimento (${dataHora(ultAbs.abastecido_em).slice(0, 5)})` : "nenhum abastecimento lançado"],
-    ["Manutenções vencidas", vencidas.length, proximas.length ? `e ${proximas.length} vence(m) nas próximas 80 h` : "nenhuma vencendo nas próximas 80 h", vencidas.length ? "erro" : ""],
+    ["Manutenções vencidas", vencidas.length, proximas.length ? `e ${proximas.length} vence(m) nas próximas ${AVISO_MANUT_H} h` : `nenhuma vencendo nas próximas ${AVISO_MANUT_H} h`, vencidas.length ? "erro" : ""],
     ["Custo de manutenção", real(custoManut), `no período · ${porHora(custoManut)}`],
     ["Custo de diesel", real(rd.custo), `no período · ${lit(rd.litros)} L${rd.semValor ? ` (${lit(rd.semValor)} L sem valor)` : ""}`],
     ["Custo total da máquina", real(custoManut + rd.custo), horas ? `${porHora(custoManut + rd.custo)} trabalhada (${lit(horas)} h)` : "sem horas no período"]]
     .map(([t, v, d, c]) => `<div class="kpi" ${c ? 'style="border-color:var(--erro)"' : ""}><small>${t}</small><b ${c ? 'style="color:var(--erro)"' : ""}>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
   const sit = p => p.feito == null ? '<span style="color:var(--suave)">sem registro</span>'
     : p.falta < 0 ? `<span style="color:var(--erro);font-weight:600">atrasada ${lit(-p.falta)} h</span>`
-    : p.falta <= 80 ? `<span style="color:var(--aviso);font-weight:600">faltam ${lit(p.falta)} h</span>`
+    : p.falta <= AVISO_MANUT_H ? `<span style="color:var(--aviso);font-weight:600">faltam ${lit(p.falta)} h</span>`
     : `<span style="color:var(--ok)">faltam ${lit(p.falta)} h</span>`;
   const adm = papel === "admin";
   $("#mPlano").innerHTML = !plano.length ? '<div class="vazio">Nenhum serviço no plano.</div>' :
