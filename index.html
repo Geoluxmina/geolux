@@ -427,7 +427,8 @@
             <label>Data e hora da retirada <input type="datetime-local" id="dcQuando"></label>
             <label>Fornecedor / posto <input id="dcFornecedor" list="dcFornecedores"></label><datalist id="dcFornecedores"></datalist>
             <label>Litros retirados <input type="number" step="0.1" min="0" inputmode="decimal" id="dcLitros"></label>
-            <label>Valor total (R$) · em branco se for pagar depois <input type="number" step="0.01" min="0" inputmode="decimal" id="dcValor"></label>
+            <label>Preço do litro (R$) · em branco se for pagar depois <input type="number" step="0.001" min="0" inputmode="decimal" id="dcPreco"></label>
+            <label>Valor total (R$) · calculado sozinho <input type="number" step="0.01" min="0" inputmode="decimal" id="dcValor"></label>
             <label>Foto do recibo ou da nota <input type="file" id="dcFoto" accept="image/*,application/pdf"></label>
             <label>Observação <input id="dcObs"></label>
           </div>
@@ -437,7 +438,8 @@
         <details id="dnBox" data-admin><summary><b>Lançar valor de carga paga depois</b></summary>
           <div class="linha">
             <label>Carga <select id="dnCarga"></select></label>
-            <label>Valor pago (R$) <input type="number" step="0.01" min="0" inputmode="decimal" id="dnValor"></label>
+            <label>Preço do litro (R$) <input type="number" step="0.001" min="0" inputmode="decimal" id="dnPreco"></label>
+            <label>Valor pago (R$) · calculado sozinho <input type="number" step="0.01" min="0" inputmode="decimal" id="dnValor"></label>
             <label>Nota ou comprovante de pagamento (opcional) <input type="file" id="dnNota" accept="image/*,application/pdf"></label>
           </div>
           <p style="color:var(--suave);font-size:13px">Use quando o diesel foi retirado só com o recibo e o valor foi acertado depois. Vale também para carga já fechada; o custo dos abastecimentos dela passa a aparecer no painel.</p>
@@ -2436,6 +2438,16 @@ $("#btAbastecer").addEventListener("click", async () => {
   $("#btAbastecer").disabled = false;
 });
 
+// valor total = litros × preço do litro (o total continua podendo ser corrigido à mão)
+function calcTotalDiesel(litros, preco, alvo) {
+  if ($(preco).value.trim() === "") return;
+  const t = numero(litros) * numero($(preco).value);
+  $(alvo).value = isFinite(t) && t > 0 ? t.toFixed(2) : "";
+}
+for (const x of ["#dcLitros", "#dcPreco"]) $(x).addEventListener("input", () => calcTotalDiesel($("#dcLitros").value, "#dcPreco", "#dcValor"));
+const litrosNota = () => dz.cargas.find(c => c.id === Number($("#dnCarga").value))?.litros || 0;
+for (const x of ["#dnCarga", "#dnPreco"]) $(x).addEventListener(x === "#dnCarga" ? "change" : "input", () => calcTotalDiesel(litrosNota(), "#dnPreco", "#dnValor"));
+
 $("#btCarga").addEventListener("click", async () => {
   const litros = numero($("#dcLitros").value), valor = numero($("#dcValor").value), forn = $("#dcFornecedor").value.trim();
   if (!$("#dcQuando").value) return msg("#dcMsg", "erro", "Informe a data e hora da retirada.");
@@ -2458,7 +2470,7 @@ $("#btCarga").addEventListener("click", async () => {
     const { data, error } = await db.from("diesel_cargas").insert({ retirado_em: new Date($("#dcQuando").value).toISOString(), fornecedor: fornNome, litros,
       valor_total: valor, comprovante_caminho: foto, observacao: $("#dcObs").value.trim() || null, registrado_por: usuario.id }).select("id,codigo,saldo_anterior_l").single();
     if (error) throw error;
-    for (const id of ["#dcLitros", "#dcValor", "#dcObs", "#dcFoto"]) $(id).value = "";
+    for (const id of ["#dcLitros", "#dcPreco", "#dcValor", "#dcObs", "#dcFoto"]) $(id).value = "";
     $("#dcQuando").value = agoraLocal(); $("#dcBox").open = false;
     $("#daCarga").value = "";
     await carregarDiesel();
@@ -2480,7 +2492,7 @@ $("#btNota").addEventListener("click", async () => {
     if (error) throw /lancar_nota_diesel|function/i.test(error.message) && /not find|does not exist|schema cache/i.test(error.message)
       ? new Error("Falta rodar a query 012 no Supabase.") : error;
     const c = dz.cargas.find(x => x.id === id);
-    for (const x of ["#dnValor", "#dnNota"]) $(x).value = "";
+    for (const x of ["#dnPreco", "#dnValor", "#dnNota"]) $(x).value = "";
     $("#dnBox").open = false;
     await carregarDiesel();
     msg("#dcMsg", "ok", `Valor da carga <b>${esc(c?.codigo)}</b> salvo.` + (valor != null ? ` Valor ${real(valor)} (R$ ${(valor / Number(c?.litros)).toFixed(2).replace(".", ",")} por litro); o custo dos abastecimentos dela já aparece no painel.` : ""));
