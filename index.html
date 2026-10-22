@@ -91,6 +91,9 @@
   .grafico rect.alvo { fill:transparent; cursor:default; }
   .dica { position:absolute; pointer-events:none; background:#fff; border:1px solid var(--borda); border-radius:6px; padding:6px 9px; font-size:12px; box-shadow:0 2px 8px rgba(0,0,0,.12); white-space:nowrap; display:none; }
   .lista-alertas { margin:0; padding-left:18px; }
+  .material summary { cursor:pointer; color:var(--azul); font-size:12px; margin-top:3px; }
+  .material ul { margin:4px 0 2px; padding-left:16px; font-size:12px; }
+  .material p { margin:4px 0; font-size:12px; color:var(--suave); max-width:460px; }
   .lista-alertas li { margin:4px 0; }
   @media (max-width:900px){ .painel-grade{ grid-template-columns:1fr; } }
   @media (max-width:640px){ main{padding:12px;} .kpi{min-width:calc(50% - 6px);} }
@@ -517,6 +520,14 @@
             <label>Novo serviço no plano <input id="mpServico" placeholder="ex.: troca da correia"></label>
             <label>A cada (horas) <input id="mpIntervalo" inputmode="decimal" style="max-width:110px"></label>
             <button class="bt sec" id="btPlanoAdd">Incluir no plano</button>
+          </div>
+          <div class="linha" data-admin style="margin-top:6px">
+            <label>Peça do serviço <select id="mqPlano"></select></label>
+            <label>Código <input id="mqCodigo" style="max-width:140px"></label>
+            <label>Descrição <input id="mqDesc" placeholder="ex.: Filtro de óleo do motor"></label>
+            <label>Qtd <input id="mqQtd" inputmode="decimal" style="max-width:70px"></label>
+            <label>Unid. <input id="mqUn" list="aiUnidades" style="max-width:70px" value="un"></label>
+            <button class="bt sec" id="btPecaAdd">Incluir peça</button>
           </div>
         </div>
         <div>
@@ -3060,7 +3071,9 @@ async function carregarManut() {
     calcularConsumo();
     // peças que saíram do almoxarifado para a máquina (sem a 017, fica vazio)
     const pecas = await todasLinhas("almox_movimentos", "id").catch(() => []);
-    mz = { maquinas, plano, servicos, pecas };
+    // material de cada serviço do plano (sem a 018, fica vazio)
+    const material = await todasLinhas("manut_plano_pecas", "id").catch(() => []);
+    mz = { maquinas, plano, servicos, pecas, material: material.filter(x => x.ativo !== false) };
   } catch (e) {
     return msg("#mMsg", "erro", /does not exist|schema cache|propria/i.test(e.message || "") ? "A manutenção ainda não foi ligada no banco. Rode a query 016 no Supabase." : erroTxt(e));
   }
@@ -3122,6 +3135,17 @@ function situacaoPlano(maqId, atual) {
   });
 }
 
+// peças/material de um serviço do plano
+const pecasDoPlano = id => (mz.material || []).filter(x => x.plano_id === id);
+const pecaTxt = x => `${x.quantidade ? lit(x.quantidade) + " " + (x.unidade || "") + " " : ""}${x.descricao}${x.codigo ? ` (cód. ${x.codigo})` : ""}`.replace(/\s+/g, " ").trim();
+function materialHtml(p, adm) {
+  const ps = pecasDoPlano(p.id);
+  if (!ps.length && !p.descricao) return "";
+  return `<details class="material"><summary>Material e como fazer${ps.length ? ` (${ps.length})` : ""}</summary>` +
+    (ps.length ? `<ul>${ps.map(x => `<li><b>${esc(pecaTxt(x))}</b>${x.observacao ? ` <span style="color:var(--suave)">· ${esc(x.observacao)}</span>` : ""}` +
+      `${adm ? ` <button class="mini" data-mpcod="${x.id}">Código</button> <button class="mini" data-mptirar="${x.id}">Tirar</button>` : ""}</li>`).join("")}</ul>` : "") +
+    (p.descricao ? `<p>${esc(p.descricao)}</p>` : "") + "</details>";
+}
 function mostrarManut() {
   const id = Number($("#mMaq").value), m = mz.maquinas.find(x => x.id === id), de = $("#mDe").value, ate = $("#mAte").value;
   const absM = dz.abs.filter(a => a.maquina_id === id && a.situacao === "valida");
@@ -3153,9 +3177,10 @@ function mostrarManut() {
   const adm = papel === "admin";
   $("#mPlano").innerHTML = !plano.length ? '<div class="vazio">Nenhum serviço no plano.</div>' :
     `<table><tr><th>Serviço</th><th class="n">Próxima</th><th>Situação</th><th></th></tr>` +
-    plano.map(p => `<tr><td style="white-space:normal;min-width:140px">${esc(p.servico)}<br><small style="color:var(--suave)">a cada ${lit(p.intervalo_h)} h · feito em ${horasTxt(p.feito)}</small>${p.a_confirmar ? ' <small class="alerta">a confirmar</small>' : ""}</td><td class="n">${horasTxt(p.proxima)}</td><td style="white-space:normal">${sit(p)}</td>` +
+    plano.map(p => `<tr><td style="white-space:normal;min-width:140px">${esc(p.servico)}<br><small style="color:var(--suave)">a cada ${lit(p.intervalo_h)} h · feito em ${horasTxt(p.feito)}</small>${p.a_confirmar ? ' <small class="alerta">a confirmar</small>' : ""}${materialHtml(p, adm)}</td><td class="n">${horasTxt(p.proxima)}</td><td style="white-space:normal">${sit(p)}</td>` +
       `<td style="white-space:nowrap"><button class="mini" data-mfeito="${p.id}">Feito</button>${adm ? ` <button class="mini" data-mintervalo="${p.id}">Intervalo</button> <button class="mini" data-mtirar="${p.id}">Tirar</button>` : ""}</td></tr>`).join("") + "</table>";
   $("#msPlano").innerHTML = '<option value="">— fora do plano —</option>' + plano.map(p => `<option value="${p.id}">${esc(p.servico)}</option>`).join("");
+  $("#mqPlano").innerHTML = plano.map(p => `<option value="${p.id}">${esc(p.servico)}</option>`).join("");
   // ficha
   $("#mfModelo").value = m.marca_modelo || ""; $("#mfSerie").value = m.numero_serie || ""; $("#mfAno").value = m.ano || ""; $("#mfUso").value = m.uso || ""; $("#mfManual").value = "";
   for (const i of ["#mfModelo", "#mfSerie", "#mfAno", "#mfUso", "#mfManual"]) $(i).disabled = !adm;
@@ -3182,6 +3207,16 @@ function mostrarManut() {
 }
 
 $("#btManut").addEventListener("click", carregarManut);
+$("#btPecaAdd").addEventListener("click", async () => {
+  const desc = $("#mqDesc").value.trim(), q = numero($("#mqQtd").value);
+  if (!$("#mqPlano").value || !desc) return alert("Escolha o serviço e escreva a descrição da peça.");
+  if (q != null && !(q > 0)) return alert("Confira a quantidade: use só números.");
+  const { error } = await db.from("manut_plano_pecas").insert({ plano_id: Number($("#mqPlano").value), codigo: $("#mqCodigo").value.trim() || null,
+    descricao: desc, quantidade: q, unidade: $("#mqUn").value.trim() || null, ativo: true });
+  if (error) return alert(erroTxt(error));
+  for (const i of ["#mqCodigo", "#mqDesc", "#mqQtd"]) $(i).value = "";
+  carregarManut();
+});
 $("#mMaq").addEventListener("change", mostrarManut);
 for (const i of ["#mDe", "#mAte"]) $(i).addEventListener("change", () => mz && mostrarManut());
 $("#msPlano").addEventListener("change", e => {
@@ -3194,6 +3229,8 @@ $("#aba-manutencao").addEventListener("click", async e => {
   if (d.mfeito) {
     const p = mz.plano.find(x => String(x.id) === d.mfeito);
     $("#msPlano").value = d.mfeito; $("#msTipo").value = "preventiva"; $("#msDesc").value = p.servico;
+    const ps = pecasDoPlano(p.id).filter(x => !/^sem troca/i.test(x.descricao));
+    if (ps.length) $("#msPecas").value = ps.map(pecaTxt).join("; ");
     const k = $("#mKpis .kpi b")?.textContent.replace(/[^\d,]/g, "").replace(",", ".");
     if (!$("#msHorimetro").value && k) $("#msHorimetro").value = k.replace(".", ",");
     $("#mForm").scrollIntoView({ behavior: "smooth" }); $("#msHorimetro").focus();
@@ -3206,6 +3243,21 @@ $("#aba-manutencao").addEventListener("click", async e => {
     const n = numero(v); if (!(n > 0)) return alert("Informe um número de horas maior que zero.");
     const { error } = await db.from("manut_plano").update({ intervalo_h: n, a_confirmar: false }).eq("id", p.id);
     if (error) return alert(error.message);
+    return carregarManut();
+  }
+  if (d.mpcod) {
+    const x = mz.material.find(m => String(m.id) === d.mpcod);
+    const v = prompt(`Código de "${x.descricao}" (como está no manual ou na própria peça):`, x.codigo || "");
+    if (v === null) return;
+    const { error } = await db.from("manut_plano_pecas").update({ codigo: v.trim() || null }).eq("id", x.id);
+    if (error) return alert(erroTxt(error));
+    return carregarManut();
+  }
+  if (d.mptirar) {
+    const x = mz.material.find(m => String(m.id) === d.mptirar);
+    if (!confirm(`Tirar "${x.descricao}" do material deste serviço?`)) return;
+    const { error } = await db.from("manut_plano_pecas").update({ ativo: false }).eq("id", x.id);
+    if (error) return alert(erroTxt(error));
     return carregarManut();
   }
   if (d.mtirar) {
