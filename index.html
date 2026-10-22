@@ -1018,7 +1018,20 @@ $("#arquivo").addEventListener("change", async e => {
     // carradas que já estão valendo no sistema (vieram de outro relatório)
     const { data: existentes } = await db.from("pesagens").select("ticket").in("ticket", unicas.map(p => p.ticket)).eq("situacao", "valida");
     const jaNoSistema = new Set((existentes || []).map(x => x.ticket));
-    const novas = unicas.filter(p => !jaNoSistema.has(p.ticket));
+    // a mesma carrada vinda pela outra balança (Coimma x VERBRAS): tiquete diferente, mas mesma placa com saída
+    // até 15 minutos de diferença. Cada carrada é pesada numa balança só, então essa fica de fora.
+    const outraBalanca = new Map();
+    if (unicas.length) {
+      const saidas = unicas.map(p => p.saida_em).sort(), mais = (t, h) => iso(new Date(new Date(t).getTime() + h * 3600000)) + "T" + new Date(new Date(t).getTime() + h * 3600000).toTimeString().slice(0, 8);
+      const { data: perto } = await db.from("pesagens").select("ticket,placa,saida_em,liquido_kg,cliente_balanca")
+        .eq("situacao", "valida").gte("saida_em", mais(saidas[0], -1)).lte("saida_em", mais(saidas[saidas.length - 1], 1));
+      for (const p of unicas) {
+        const q = (perto || []).find(x => x.ticket !== p.ticket && normPlaca(x.placa) === normPlaca(p.placa)
+          && Math.abs(new Date(x.saida_em) - new Date(p.saida_em)) <= 15 * 60000);
+        if (q) outraBalanca.set(p.ticket, q);
+      }
+    }
+    const novas = unicas.filter(p => !jaNoSistema.has(p.ticket) && !outraBalanca.has(p.ticket));
     const semProduto = [...new Set(r.pesagens.map(p => p.produto_balanca))].filter(n => !conhecidos.get(n.toLowerCase()));
     html += `<div class="card"><h3 style="margin:0 0 6px">${esc(f.name)}</h3>`;
     if (ja) html += `<div class="msg aviso">Este arquivo já foi anexado em ${new Date(ja.importado_em).toLocaleString("pt-BR")}. Nada será gravado de novo. Se quiser anexar de novo, cancele antes o anexo anterior.</div>`;
@@ -1032,9 +1045,10 @@ $("#arquivo").addEventListener("change", async e => {
       : `<div class="msg erro">Atenção: a leitura não bate com os totais do relatório (lido: ${r.soma.carradas} carradas, ${kg(r.soma.liquido)} kg; relatório: ${r.totais ? r.totais.carradas + " carradas, " + kg(r.totais.liquido) + " kg" : "sem totais"}). Confira antes de gravar.</div>`;
     if (repetidas.length) html += `<div class="msg aviso"><b>${repetidas.length} carrada(s) repetida(s) dentro deste relatório</b> (tiquete ${repetidas.map(p => p.ticket).join(", ")}). Cada uma será gravada uma vez só.</div>`;
     if (jaNoSistema.size) html += `<div class="msg aviso"><b>${jaNoSistema.size} carrada(s) já estão no sistema</b> por outro relatório (tiquete ${[...jaNoSistema].join(", ")}). Elas não serão gravadas de novo.</div>`;
-    if (repetidas.length || jaNoSistema.size) html += `<div class="msg ok">Serão consideradas <b>${novas.length} carrada(s) novas, ${ton(novas.reduce((s, p) => s + p.liquido_kg, 0))} t</b>.</div>`;
-    r.pesagens = unicas;
-    r.soma = { ...r.soma, carradas: unicas.length, liquido: unicas.reduce((s, p) => s + p.liquido_kg, 0) };
+    if (outraBalanca.size) html += `<div class="msg aviso"><b>${outraBalanca.size} carrada(s) já estão no sistema pela outra balança</b> (mesma placa e mesmo horário): ${[...outraBalanca].map(([t, q]) => `tiquete ${t} = tiquete ${q.ticket} de ${brHora(q.saida_em)}`).join("; ")}. Elas não serão gravadas de novo.</div>`;
+    if (repetidas.length || jaNoSistema.size || outraBalanca.size) html += `<div class="msg ok">Serão consideradas <b>${novas.length} carrada(s) novas, ${ton(novas.reduce((s, p) => s + p.liquido_kg, 0))} t</b>.</div>`;
+    r.pesagens = unicas.filter(p => !outraBalanca.has(p.ticket));
+    r.soma = { ...r.soma, carradas: r.pesagens.length, liquido: r.pesagens.reduce((s, p) => s + p.liquido_kg, 0) };
     if (r.naoLidas.length) html += `<div class="msg erro">${r.naoLidas.length} linha(s) não reconhecida(s):<br>${r.naoLidas.map(esc).join("<br>")}</div>`;
     if (r.verbras) html += `<div class="msg ok">Ticket da balança da <b>${CLIENTE_VERBRAS}</b>: as carradas entram no cliente ${CLIENTE_VERBRAS}, mesmo com o ticket em nome da Geolux.</div>`;
     const semMotorista = r.pesagens.filter(p => !p.motorista && !ehVerbras(p)).length;
