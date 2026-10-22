@@ -74,6 +74,7 @@
   #login h2 { color:var(--azul); margin:0 0 4px; }
   .escondido { display:none !important; }
   .painel-grade { display:grid; grid-template-columns:2fr 1fr; gap:16px; }
+  .painel-grade > * { min-width:0; }
   .kpi .delta { display:block; font-size:12px; color:var(--suave); margin-top:2px; }
   .barra { height:10px; background:var(--azul); border-radius:0 4px 4px 0; }
   .grafico { position:relative; }
@@ -2612,8 +2613,8 @@ function mostrarManut() {
     : `<span style="color:var(--ok)">faltam ${lit(p.falta)} h</span>`;
   const adm = papel === "admin";
   $("#mPlano").innerHTML = !plano.length ? '<div class="vazio">Nenhum serviço no plano.</div>' :
-    `<table><tr><th>Serviço</th><th class="n">Intervalo</th><th class="n">Feito em</th><th class="n">Próxima</th><th>Situação</th><th></th></tr>` +
-    plano.map(p => `<tr><td>${esc(p.servico)}${p.a_confirmar ? ' <small class="alerta">a confirmar</small>' : ""}</td><td class="n">a cada ${lit(p.intervalo_h)} h</td><td class="n">${horasTxt(p.feito)}</td><td class="n">${horasTxt(p.proxima)}</td><td>${sit(p)}</td>` +
+    `<table><tr><th>Serviço</th><th class="n">Próxima</th><th>Situação</th><th></th></tr>` +
+    plano.map(p => `<tr><td style="white-space:normal;min-width:140px">${esc(p.servico)}<br><small style="color:var(--suave)">a cada ${lit(p.intervalo_h)} h · feito em ${horasTxt(p.feito)}</small>${p.a_confirmar ? ' <small class="alerta">a confirmar</small>' : ""}</td><td class="n">${horasTxt(p.proxima)}</td><td style="white-space:normal">${sit(p)}</td>` +
       `<td style="white-space:nowrap"><button class="mini" data-mfeito="${p.id}">Feito</button>${adm ? ` <button class="mini" data-mintervalo="${p.id}">Intervalo</button> <button class="mini" data-mtirar="${p.id}">Tirar</button>` : ""}</td></tr>`).join("") + "</table>";
   $("#msPlano").innerHTML = '<option value="">— fora do plano —</option>' + plano.map(p => `<option value="${p.id}">${esc(p.servico)}</option>`).join("");
   // ficha
