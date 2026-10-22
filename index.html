@@ -2463,6 +2463,7 @@ $("#btCarga").addEventListener("click", async () => {
     }
   }
   if (!litros || litros <= 0) return msg("#dcMsg", "erro", "Informe os litros retirados.");
+  if (valor && valor / litros < 2 && !confirm(`O valor total ficou ${real(valor)} para ${lit(litros)} L (R$ ${(valor / litros).toFixed(2).replace(".", ",")} por litro).\nParece que o preço do litro foi digitado no campo do valor total.\n\nToque em Cancelar e digite o preço no campo "Preço do litro", ou OK para salvar assim mesmo.`)) return;
   if (!$("#dcFoto").files[0] && !confirm("Nenhuma foto do recibo ou da nota foi anexada. Abrir a carga assim mesmo?")) return;
   $("#btCarga").disabled = true; msg("#dcMsg", "ok", "Salvando…");
   try {
@@ -2485,6 +2486,8 @@ $("#btNota").addEventListener("click", async () => {
   if (!id) return msg("#dcMsg", "erro", "Escolha a carga.");
   if (valor == null && !f) return msg("#dcMsg", "erro", "Informe o valor ou anexe a nota.");
   if (valor != null && (isNaN(valor) || valor < 0)) return msg("#dcMsg", "erro", "Valor inválido.");
+  const litrosC = Number(litrosNota());
+  if (valor && litrosC && valor / litrosC < 2 && !confirm(`O valor pago ficou ${real(valor)} para ${lit(litrosC)} L (R$ ${(valor / litrosC).toFixed(2).replace(".", ",")} por litro).\nParece que o preço do litro foi digitado no campo do valor pago.\n\nToque em Cancelar e digite o preço no campo "Preço do litro", ou OK para salvar assim mesmo.`)) return;
   $("#btNota").disabled = true; msg("#dcMsg", "ok", "Salvando…");
   try {
     const nota = await enviarFotoDiesel("notas", f);
