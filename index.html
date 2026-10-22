@@ -1171,7 +1171,7 @@ async function carregarAnexos() {
     ? "Quando a balança conferir e enviar um relatório, ele aparece aqui como enviado; marque como visto depois de olhar. Relatório errado: Cancelar anexo, com o motivo. O anexo e as carradas saem das telas (ficam só no backup) e o arquivo pode ser anexado de novo."
     : "Depois de gravar, confira o resumo do dia e envie ao administrador. Relatório errado: Cancelar anexo, com o motivo, e anexe o certo.";
   const { data, error } = await db.from("importacoes")
-    .select("id,arquivo_nome,carradas_lidas,total_liquido_kg,importado_por,importado_em,importacao_cancelamentos(motivo),conferencias(observacao,enviado_em,conferencias_vistas(visto_em))")
+    .select("id,arquivo_nome,caminho_storage,carradas_lidas,total_liquido_kg,importado_por,importado_em,importacao_cancelamentos(motivo),conferencias(observacao,enviado_em,conferencias_vistas(visto_em))")
     .order("importado_em", { ascending: false }).limit(40);
   if (error) return $("#tabAnexos").innerHTML = `<div class="msg erro">${erroTxt(error)}</div>`;
   const ativos = data.filter(i => !um(i.importacao_cancelamentos));
@@ -1185,7 +1185,7 @@ async function carregarAnexos() {
       const conf = !c ? '<span class="alerta">não enviada</span>'
         : `enviada em ${new Date(c.enviado_em).toLocaleString("pt-BR")}${c.observacao ? ` (${esc(c.observacao)})` : ""}` +
           (v ? ` · vista pelo administrador em ${new Date(v.visto_em).toLocaleString("pt-BR")}` : papel === "admin" ? ' · <b>aguardando você</b>' : "");
-      const bts = [!c ? `<button class="mini" data-conferir="${i.id}" data-nome="${esc(i.arquivo_nome)}">Conferir e enviar</button>` : "",
+      const bts = [`<button class="mini" data-verpdf="${esc(i.caminho_storage)}">Ver PDF</button>`, !c ? `<button class="mini" data-conferir="${i.id}" data-nome="${esc(i.arquivo_nome)}">Conferir e enviar</button>` : "",
         c && !v && papel === "admin" ? `<button class="mini" data-visto="${i.id}">Marcar como visto</button>` : "",
         `<button class="mini" data-cancelar-anexo="${i.id}" data-nome="${esc(i.arquivo_nome)}">Cancelar anexo</button>`].join(" ");
       return `<tr><td>${new Date(i.importado_em).toLocaleString("pt-BR")}</td><td>${esc(i.arquivo_nome)}</td><td class="n">${i.carradas_lidas}</td><td class="n">${ton(i.total_liquido_kg)}</td><td>${conf}</td><td>${bts}</td></tr>`;
@@ -1985,6 +1985,14 @@ async function enviarFotoDiesel(pasta, f) {
   if (error) throw error;
   return caminho;
 }
+// PDF da balança que foi anexado (abre numa aba nova; o link vale 10 minutos)
+async function abrirPdfBalanca(caminho) {
+  const janela = window.open("", "_blank");
+  const { data, error } = await db.storage.from(BUCKET).createSignedUrl(caminho, 600);
+  if (error) { janela?.close(); return msg("#anexosMsg", "erro", "Não foi possível abrir o PDF. " + erroTxt(error)); }
+  if (janela) janela.location = data.signedUrl; else location.href = data.signedUrl;
+}
+document.addEventListener("click", e => { const b = e.target.closest?.("[data-verpdf]"); if (b) abrirPdfBalanca(b.dataset.verpdf); });
 async function abrirFotoDiesel(caminho) {
   const janela = window.open("", "_blank");
   const { data, error } = await db.storage.from(BUCKET_DIESEL).createSignedUrl(caminho, 600);
