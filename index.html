@@ -538,6 +538,7 @@
               <label>Nº de série <input id="mfSerie"></label>
               <label>Ano <input id="mfAno" inputmode="numeric"></label>
               <label>Uso <input id="mfUso" placeholder="ex.: perfuração"></label>
+              <label>Dados técnicos <textarea id="mfDados" rows="7" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--borda);border-radius:6px" placeholder="motor, pressão, vazão, capacidades, códigos de peças"></textarea></label>
               <label>Manual do fabricante (PDF ou foto) <input type="file" id="mfManual" accept="application/pdf,image/*"></label>
               <div id="mfManualVer"></div>
               <button class="bt sec" id="btFicha" data-admin>Salvar ficha</button>
@@ -3183,7 +3184,9 @@ function mostrarManut() {
   $("#mqPlano").innerHTML = plano.map(p => `<option value="${p.id}">${esc(p.servico)}</option>`).join("");
   // ficha
   $("#mfModelo").value = m.marca_modelo || ""; $("#mfSerie").value = m.numero_serie || ""; $("#mfAno").value = m.ano || ""; $("#mfUso").value = m.uso || ""; $("#mfManual").value = "";
+  $("#mfDados").value = m.dados_tecnicos || ""; $("#mfDados").rows = Math.min(16, Math.max(4, (m.dados_tecnicos || "").split("\n").length + 1));
   for (const i of ["#mfModelo", "#mfSerie", "#mfAno", "#mfUso", "#mfManual"]) $(i).disabled = !adm;
+  $("#mfDados").readOnly = !adm;
   $("#mfManualVer").innerHTML = m.manual_caminho ? `<button class="mini" data-mmanual="${esc(m.manual_caminho)}">Ver manual</button>` : '<small style="color:var(--suave)">Manual ainda não anexado.</small>';
   // atenção
   const al = [];
@@ -3300,6 +3303,7 @@ $("#btFicha").addEventListener("click", async () => {
   try {
     const manual = await enviarFotoDiesel("manuais", $("#mfManual").files[0]);
     const dados = { marca_modelo: $("#mfModelo").value.trim() || null, numero_serie: $("#mfSerie").value.trim() || null, ano: ano ? Number(ano) : null, uso: $("#mfUso").value.trim() || null };
+    if ("dados_tecnicos" in (mz.maquinas.find(x => x.id === id) || {}) || $("#mfDados").value.trim()) dados.dados_tecnicos = $("#mfDados").value.trim() || null;
     if (manual) dados.manual_caminho = manual;
     const { error } = await db.from("maquinas").update(dados).eq("id", id);
     if (error) throw error;
