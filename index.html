@@ -285,7 +285,7 @@
         <label>Até <input type="date" id="cAte"></label>
         <button class="bt" id="btConferir">Mostrar</button>
       </div>
-      <p style="color:var(--suave);font-size:13px">Pesagens que podem gerar discussão com o cliente. Não são erros por si só, mas vale saber explicar cada uma. Depois de conferir, clique em <b>Conferida</b> e ela sai da lista.</p>
+      <p style="color:var(--suave);font-size:13px">Pesagens que podem gerar discussão com o cliente. Não são erros por si só, mas vale saber explicar cada uma. Depois de conferir, clique em <b>✓ Conferi</b> ao lado da carrada e ela sai da lista.</p>
       <div class="tabela" id="confTabela"></div>
     </section>
 
@@ -1376,14 +1376,23 @@ async function mostrarConferir() {
     const todas = await buscar($("#cDe").value, $("#cAte").value);
     const ps = todas.filter(alertas), nConf = todas.filter(p => p.conferida).length;
     $("#confTabela").innerHTML = (ps.length
-      ? `<table><tr><th>Data</th><th>Tiquete</th><th>Cliente</th><th>Placa</th><th>Motorista</th><th>Entrada</th><th>Saída</th><th class="n">Líquido (kg)</th><th>O que conferir</th><th></th></tr>` +
-        ps.map(p => `<tr><td>${br(p.data)}</td><td>${p.ticket}</td><td>${esc(p.cliente)}</td><td>${esc(p.placa)}</td><td>${esc(p.motorista || "—")}</td><td>${brHora(p.entrada_em)}</td><td>${brHora(p.saida_em)}</td><td class="n">${liqTxt(p)}</td><td class="alerta">${esc(alertas(p))}</td><td><button class="mini" data-conf-ok="${p.ticket}">Conferida</button></td></tr>`).join("") + "</table>"
+      ? `<div class="linha" style="margin-bottom:8px"><button class="bt sec" data-conf-todas="1">✓ Marcar todas da lista como conferidas (${ps.length})</button></div>` +
+        `<table><tr><th></th><th>Data</th><th>Tiquete</th><th>Cliente</th><th>Placa</th><th>Motorista</th><th>Entrada</th><th>Saída</th><th class="n">Líquido (kg)</th><th>O que conferir</th></tr>` +
+        ps.map(p => `<tr><td><button class="mini" data-conf-ok="${p.ticket}" style="background:var(--ok);color:#fff;border-color:var(--ok)">✓ Conferi</button></td><td>${br(p.data)}</td><td>${p.ticket}</td><td>${esc(p.cliente)}</td><td>${esc(p.placa)}</td><td>${esc(p.motorista || "—")}</td><td>${brHora(p.entrada_em)}</td><td>${brHora(p.saida_em)}</td><td class="n">${liqTxt(p)}</td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") + "</table>"
       : '<div class="vazio">Nada a conferir nesse período.</div>') +
       (nConf ? `<p style="color:var(--suave);font-size:13px">${nConf} carrada(s) do período já conferida(s) não aparecem aqui.</p>` : "");
   } catch (e) { $("#confTabela").innerHTML = `<div class="msg erro">${erroTxt(e)}</div>`; }
 }
 $("#btConferir").addEventListener("click", mostrarConferir);
 $("#confTabela").addEventListener("click", async e => {
+  if (e.target.dataset.confTodas) {
+    const ts = [...$("#confTabela").querySelectorAll("[data-conf-ok]")].map(b => Number(b.dataset.confOk));
+    const obs = prompt(`Marcar as ${ts.length} carradas da lista como conferidas?\nElas saem da aba A conferir (continuam no sistema).\n\nO que foi conferido?`, "Conferidas conforme o PDF da balança");
+    if (obs === null) return;
+    const { error } = await db.from("pesagens_conferidas").upsert(ts.map(t => ({ ticket: t, observacao: obs.trim() || "Conferida", conferido_por: usuario.id })), { onConflict: "ticket", ignoreDuplicates: true });
+    if (error) return alert(/does not exist|schema cache/i.test(error.message) ? "Rode a query 014 no Supabase." : error.message);
+    return mostrarConferir();
+  }
   const t = e.target.dataset.confOk; if (!t) return;
   const obs = prompt(`Tiquete ${t}: o que foi conferido? (ex.: conferido com o PDF da balança, motorista avisado)`, "Conferida conforme o PDF da balança");
   if (obs === null) return;
