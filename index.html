@@ -159,7 +159,6 @@
       <button data-aba="almox" data-parte="estoque">Inventário</button>
       <button data-aba="almox" data-parte="cadastro">Cadastro de itens</button>
       <button data-aba="almox" data-parte="contagem">Contagem</button>
-      <button data-aba="almox" data-parte="movimento">Entrada / Saída</button>
     </div>
     <div class="grupo" data-grupo="sistema" data-admin>
       <h4>Sistema</h4>
@@ -593,12 +592,12 @@
         <h3 style="margin-top:0">Inventário</h3>
         <div class="tabela" id="aEstoque"></div>
       </div>
-      <div class="painel-grade" data-parte="estoque" style="grid-template-columns:1fr 1fr">
+      <div class="painel-grade" data-parte="estoque" id="aGrade" style="grid-template-columns:1fr 1fr">
         <div class="card">
           <h3 style="margin-top:0">Atenção</h3>
           <ul class="lista-alertas" id="aAlertas"></ul>
         </div>
-        <div class="card">
+        <div class="card" id="aEmprestCard">
           <h3 style="margin-top:0">Ferramentas emprestadas</h3>
           <div class="tabela" id="aEmprest"></div>
         </div>
@@ -2950,7 +2949,8 @@ function mostrarEstoque() {
     ["Valor do inventário", real(ativos.reduce((t, i) => t + i.valor, 0)), "pela compra ou valor estimado"],
     ["Ruins ou quebrados", ruins.length, ruins.length ? "consertar ou trocar" : "nenhum", ruins.length ? "erro" : ""],
     ["Abaixo do mínimo", baixos.length, baixos.length ? "comprar antes de faltar" : "nada faltando", baixos.length ? "erro" : ""],
-    ["Ferramentas emprestadas", emprest.length, antigos.length ? `${antigos.length} há mais de 7 dias` : "nenhuma atrasada"]]
+    // Entrada/Saída saiu do menu (pedido de 2026-10-26: só inventário); empréstimo antigo ainda aparece até ser devolvido
+    ...(emprest.length ? [["Ferramentas emprestadas", emprest.length, antigos.length ? `${antigos.length} há mais de 7 dias` : "nenhuma atrasada"]] : [])]
     .map(([t, v, d, c]) => `<div class="kpi" ${c ? 'style="border-color:var(--erro)"' : ""}><small>${t}</small><b ${c ? 'style="color:var(--erro)"' : ""}>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
   $("#aEstoque").innerHTML = !lista.length ? `<div class="vazio">${ativos.length ? "Nenhum item com esse filtro." : "Nenhum item cadastrado. Comece pelo Cadastro de itens."}</div>` :
     `<table><tr><th>Item</th><th>Estado</th><th class="n">Tem</th><th>Responsável</th><th class="n">Valor</th><th></th></tr>` +
@@ -2960,7 +2960,7 @@ function mostrarEstoque() {
       `${i.emprestimos.length ? `<br><small style="color:var(--aviso)">emprestada: ${i.emprestimos.map(e => `${qtdTxt(e.qtd, i.unidade)} com ${esc(e.pessoa)}`).join(", ")}</small>` : ""}</td>` +
       `<td>${estadoTxt(i.estado)}</td><td class="n" ${i.baixo || i.saldo < 0 ? 'style="color:var(--erro);font-weight:600"' : ""}>${qtdTxt(i.saldo, i.unidade)}${Number(i.minimo) ? `<br><small style="color:var(--suave)">mín. ${qtdTxt(i.minimo, i.unidade)}</small>` : ""}</td>` +
       `<td>${esc(i.responsavel || "—")}</td><td class="n">${i.valor ? real(i.valor) : "—"}${i.valorUnit != null && i.saldo > 1 ? `<br><small style="color:var(--suave)">${real(i.valorUnit)} cada</small>` : ""}</td>` +
-      `<td style="white-space:nowrap">${i.foto_caminho ? `<button class="mini" data-anota="${esc(i.foto_caminho)}">Foto</button> ` : ""}<button class="mini" data-aeditar="${i.id}">Editar</button>${i.ferramenta ? ` <button class="mini" data-amov="emprestimo" data-aitem="${i.id}">Emprestar</button>` : ""}</td></tr>`).join("") +
+      `<td style="white-space:nowrap">${i.foto_caminho ? `<button class="mini" data-anota="${esc(i.foto_caminho)}">Foto</button> ` : ""}<button class="mini" data-aeditar="${i.id}">Editar</button></td></tr>`).join("") +
     `<tr class="dia"><td colspan="4">TOTAL DOS ITENS DA LISTA (${lista.length})</td><td class="n">${real(lista.reduce((t, i) => t + i.valor, 0))}</td><td></td></tr></table>`;
   const al = [];
   if (ruins.length) al.push(`<b>${ruins.length} item(ns) ruim ou quebrado:</b> ${ruins.map(i => `${esc(i.nome)} (${NOME_ESTADO[i.estado].toLowerCase()})`).join("; ")}.`);
@@ -2972,6 +2972,8 @@ function mostrarEstoque() {
   const semEstado = ativos.filter(i => !i.estado).length;
   if (semEstado) al.push(`${semEstado} item(ns) sem estado (novo, bom, regular, ruim ou quebrado).`);
   $("#aAlertas").innerHTML = al.length ? al.map(x => `<li>${x}</li>`).join("") : "<li>Tudo em dia.</li>";
+  $("#aEmprestCard").classList.toggle("escondido", !emprest.length);
+  $("#aGrade").style.gridTemplateColumns = emprest.length ? "1fr 1fr" : "1fr";
   $("#aEmprest").innerHTML = !emprest.length ? '<div class="vazio">Nenhuma ferramenta emprestada.</div>' :
     `<table><tr><th>Ferramenta</th><th>Com quem</th><th class="n">Qtd</th><th>Desde</th><th></th></tr>` +
     emprest.sort((a, b) => (a.desde || "") < (b.desde || "") ? -1 : 1).map(e => `<tr><td>${esc(e.item.nome)}</td><td>${esc(e.pessoa)}</td><td class="n">${qtdTxt(e.qtd, e.item.unidade)}</td><td>${br(e.desde)}</td>` +
