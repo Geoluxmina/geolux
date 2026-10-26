@@ -2181,9 +2181,76 @@ function mostrarCargas() {
         c.nota_caminho ? `<button class="mini" data-dfoto="${esc(c.nota_caminho)}">Ver nota</button>` : "",
         papel === "admin" && c.valor_total == null ? `<button class="mini" data-dnota="${c.id}">Lançar valor</button>` : "",
         c.situacao === "aberta" ? `<button class="mini" data-dfechar="${c.id}">Fechar carga</button>` : "",
+        `<button class="mini" data-deditar-carga="${c.id}">Editar</button>`,
         `<button class="mini" data-dcancelar-carga="${c.id}" data-codigo="${esc(c.codigo)}">Cancelar</button>`].join(" ");
-      return `<tr><td><b>${esc(c.codigo)}</b></td><td>${dataHora(c.retirado_em)}</td><td>${esc(c.fornecedor)}</td><td class="n">${lit(c.litros)}</td><td class="n">${Number(c.saldo_anterior_l) ? lit(c.saldo_anterior_l) : "—"}</td><td class="n">${lit(s.usado)}</td><td class="n"><b>${lit(s.restante)}</b></td><td class="n">${c.valor_total == null ? '<span class="alerta">a lançar</span>' : real(c.valor_total)}</td><td class="n">${s.precoL ? s.precoL.toFixed(2).replace(".", ",") : "—"}</td><td>${sit}</td><td>${bts}</td></tr>`;
+      return `<tr><td><b>${esc(c.codigo)}</b></td><td>${dataHora(c.retirado_em)}</td><td>${esc(c.fornecedor)}</td><td class="n">${lit(c.litros)}</td><td class="n">${Number(c.saldo_anterior_l) ? lit(c.saldo_anterior_l) : "—"}</td><td class="n">${lit(s.usado)}</td><td class="n"><b>${lit(s.restante)}</b></td><td class="n">${c.valor_total == null ? '<span class="alerta">a lançar</span>' : real(c.valor_total)}</td><td class="n">${s.precoL ? s.precoL.toFixed(2).replace(".", ",") : "—"}</td><td>${sit}${editadoTxt(c)}</td><td>${bts}</td></tr>`;
     }).join("") + "</table>";
+}
+
+// ---- editar lançamento do diesel (query 021): guarda o motivo; a auditoria guarda o valor antigo e o novo
+const editadoTxt = x => x.editado_em ? `<br><small style="color:var(--suave)" title="${esc(x.motivo_edicao || "")}">editado em ${dataHora(x.editado_em)}${x.motivo_edicao ? ": " + esc(x.motivo_edicao) : ""}</small>` : "";
+const paraLocal = t => { const d = new Date(t); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+// janela com os campos; salvar(valores) devolve uma mensagem de erro ou nada
+function janelaEditar(titulo, campos, salvar) {
+  const caixa = document.createElement("div");
+  caixa.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000;overflow:auto";
+  caixa.innerHTML = `<div class="card" style="background:#fff;max-width:520px;width:100%;margin:auto;box-shadow:0 10px 30px rgba(0,0,0,.3)">
+    <h3 style="margin-top:0">${titulo}</h3><div class="linha">` +
+    campos.map(c => `<label style="flex:1 1 200px">${c.rotulo}${c.opcoes
+      ? `<select data-campo="${c.nome}">${c.opcoes.map(([v, t]) => `<option value="${esc(String(v))}" ${String(v) === String(c.valor) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`
+      : `<input data-campo="${c.nome}" type="${c.tipo || "text"}" ${c.tipo === "number" ? 'step="0.1" min="0" inputmode="decimal"' : ""} value="${esc(c.valor == null ? "" : String(c.valor))}">`}</label>`).join("") +
+    `<label style="flex:1 1 100%">Motivo da edição (obrigatório) <input data-campo="motivo" placeholder="ex.: lançado na carga errada"></label></div>
+    <div class="msg erro escondido" data-erro></div>
+    <div class="linha" style="margin-top:8px"><button class="bt" data-salvar>Salvar edição</button><button class="bt sec" data-fechar>Desistir</button></div></div>`;
+  document.body.appendChild(caixa);
+  caixa.querySelector("[data-fechar]").onclick = () => caixa.remove();
+  caixa.querySelector("[data-salvar]").onclick = async () => {
+    const v = {}; caixa.querySelectorAll("[data-campo]").forEach(el => v[el.dataset.campo] = el.value.trim());
+    const erro = !v.motivo ? "Informe o motivo da edição." : await salvar(v);
+    const box = caixa.querySelector("[data-erro]");
+    if (erro) { box.textContent = erro; box.classList.remove("escondido"); return; }
+    caixa.remove(); carregarDiesel();
+  };
+}
+const erroRpcEditar = e => /editar_(abastecimento|carga_diesel)/i.test(e.message) && /not find|does not exist|schema cache/i.test(e.message) ? "Falta rodar a query 021 no Supabase." : erroTxt(e);
+function editarAbastecimento(id) {
+  const a = dz.abs.find(x => x.id === id); if (!a) return;
+  const cargas = dz.cargas.filter(c => c.situacao === "aberta" || c.id === a.carga_id);
+  const maqs = dz.maquinas.filter(m => m.ativo || m.id === a.maquina_id);
+  janelaEditar("Editar abastecimento", [
+    { nome: "carga", rotulo: "Carga de diesel", valor: a.carga_id, opcoes: cargas.map(c => [c.id, `${c.codigo} · restam ${lit(saldoCarga(c).restante)} L${c.situacao !== "aberta" ? " (fechada)" : ""}`]) },
+    { nome: "maquina", rotulo: "Máquina", valor: a.maquina_id, opcoes: maqs.map(m => [m.id, m.nome]) },
+    { nome: "quando", rotulo: "Data e hora", tipo: "datetime-local", valor: paraLocal(a.abastecido_em) },
+    { nome: "horimetro", rotulo: "Horímetro", tipo: "number", valor: a.horimetro },
+    { nome: "litros", rotulo: "Litros abastecidos", tipo: "number", valor: a.litros },
+    { nome: "operador", rotulo: "Operador", valor: a.operador },
+    { nome: "obs", rotulo: "Observação", valor: a.observacao }], async v => {
+    const litros = numero(v.litros), hor = numero(v.horimetro);
+    if (!v.quando) return "Informe a data e hora.";
+    if (!(litros > 0)) return "Informe os litros.";
+    if (hor == null || isNaN(hor) || hor < 0) return "Informe o horímetro.";
+    const { error } = await db.rpc("editar_abastecimento", { p_id: id, p_carga_id: Number(v.carga), p_maquina_id: Number(v.maquina),
+      p_abastecido_em: new Date(v.quando).toISOString(), p_horimetro: hor, p_litros: litros, p_operador: v.operador, p_observacao: v.obs, p_motivo: v.motivo });
+    if (error) return erroRpcEditar(error);
+    msg("#daMsg", "ok", "Abastecimento editado. O valor antigo fica guardado na auditoria.");
+  });
+}
+function editarCarga(id) {
+  const c = dz.cargas.find(x => x.id === id); if (!c) return;
+  janelaEditar(`Editar carga ${esc(c.codigo)}`, [
+    { nome: "quando", rotulo: "Data e hora da retirada", tipo: "datetime-local", valor: paraLocal(c.retirado_em) },
+    { nome: "fornecedor", rotulo: "Fornecedor / posto", valor: c.fornecedor },
+    { nome: "litros", rotulo: "Litros retirados", tipo: "number", valor: c.litros },
+    { nome: "obs", rotulo: "Observação", valor: c.observacao }], async v => {
+    const litros = numero(v.litros);
+    if (!v.quando) return "Informe a data e hora.";
+    if (!v.fornecedor) return "Informe o fornecedor.";
+    if (!(litros > 0)) return "Informe os litros.";
+    const { error } = await db.rpc("editar_carga_diesel", { p_id: id, p_retirado_em: new Date(v.quando).toISOString(), p_fornecedor: v.fornecedor,
+      p_litros: litros, p_observacao: v.obs, p_motivo: v.motivo });
+    if (error) return erroRpcEditar(error);
+    msg("#dcMsg", "ok", `Carga ${esc(c.codigo)} editada.` + (c.valor_total != null && litros !== Number(c.litros) ? " Os litros mudaram: confira o valor da carga em Lançar valor." : ""));
+  });
 }
 
 function mostrarAbastecimentos() {
@@ -2196,8 +2263,8 @@ function mostrarAbastecimentos() {
     lista.map(a => {
       const m = maq.get(a.maquina_id), u = unid(m);
       const cons = a.lh != null ? `${lit(a.lh)} L/${u}` + (a.desvio != null && Math.abs(a.desvio) > 0.3 ? ` <span class="alerta">(${a.desvio > 0 ? "+" : ""}${Math.round(a.desvio * 100)}%)</span>` : "") : "—";
-      return `<tr><td>${dataHora(a.abastecido_em)}</td><td>${esc(m?.nome)}</td><td>${esc(cod.get(a.carga_id))}</td><td class="n">${lit(a.horimetro)} ${u}</td><td class="n">${a.horas != null ? lit(a.horas) + " " + u : "—"}</td><td class="n"><b>${lit(a.litros)}</b></td><td class="n">${cons}</td><td class="n">${real(a.custo)}</td><td>${esc(a.operador || "—")}</td><td>${esc(a.observacao || "")}</td>` +
-        `<td>${a.pendente ? '<span class="alerta">guardado no celular</span>' : `${a.foto_caminho ? `<button class="mini" data-dfoto="${esc(a.foto_caminho)}">Foto</button> ` : ""}<button class="mini" data-dcancelar-abast="${a.id}">Cancelar</button>`}</td></tr>`;
+      return `<tr><td>${dataHora(a.abastecido_em)}</td><td>${esc(m?.nome)}</td><td>${esc(cod.get(a.carga_id))}</td><td class="n">${lit(a.horimetro)} ${u}</td><td class="n">${a.horas != null ? lit(a.horas) + " " + u : "—"}</td><td class="n"><b>${lit(a.litros)}</b></td><td class="n">${cons}</td><td class="n">${real(a.custo)}</td><td>${esc(a.operador || "—")}</td><td>${esc(a.observacao || "")}${editadoTxt(a)}</td>` +
+        `<td>${a.pendente ? '<span class="alerta">guardado no celular</span>' : `${a.foto_caminho ? `<button class="mini" data-dfoto="${esc(a.foto_caminho)}">Foto</button> ` : ""}<button class="mini" data-deditar-abast="${a.id}">Editar</button> <button class="mini" data-dcancelar-abast="${a.id}">Cancelar</button>`}</td></tr>`;
     }).join("") + "</table>";
 }
 
@@ -2788,6 +2855,8 @@ $("#aba-diesel").addEventListener("click", async e => {
     msg("#dcMsg", "ok", `Carga ${esc(c.codigo)} fechada.` + (sobra == null ? ` Sobra não medida: ${lit(s.restante)} L ficam em aberto para conferência.` : sobra > 0 ? ` A sobra de ${lit(sobra)} L entra como saldo da próxima carga.` : ""));
     return carregarDiesel();
   }
+  if (d.deditarAbast) return editarAbastecimento(Number(d.deditarAbast));
+  if (d.deditarCarga) return editarCarga(Number(d.deditarCarga));
   const tipo = d.dcancelarCarga ? "carga" : d.dcancelarAbast ? "abastecimento" : null;
   if (tipo) {
     const motivo = prompt(`Cancelar ${tipo === "carga" ? "a carga " + d.codigo : "este abastecimento"}?\nO lançamento sai das telas e fica guardado no banco.\n\nMotivo:`);
