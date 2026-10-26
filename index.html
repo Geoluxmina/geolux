@@ -3284,7 +3284,8 @@ function mostrarManut() {
   const atual = Math.max(...absM.map(a => Number(a.horimetro)), ...servM.filter(s => s.situacao === "valida" && s.horimetro != null).map(s => Number(s.horimetro)), -1);
   const hAtual = atual >= 0 ? atual : null;
   const ultAbs = absM.reduce((u, a) => !u || a.abastecido_em > u.abastecido_em ? a : u, null);
-  const plano = situacaoPlano(id, hAtual);
+  // da menor hora para a maior: primeiro a próxima troca; sem registro, pelo intervalo
+  const plano = situacaoPlano(id, hAtual).sort((a, b) => (a.proxima ?? Infinity) - (b.proxima ?? Infinity) || Number(a.intervalo_h) - Number(b.intervalo_h));
   const vencidas = plano.filter(p => p.falta != null && p.falta < 0), proximas = plano.filter(p => p.falta != null && p.falta >= 0 && p.falta <= AVISO_MANUT_H);
   // custos do período
   const servPer = servM.filter(s => s.situacao === "valida" && s.feito_em >= de && s.feito_em <= ate);
