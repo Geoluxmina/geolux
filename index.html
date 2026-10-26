@@ -3243,18 +3243,18 @@ async function avisoManutEntrada() {
   } catch { /* sem internet ou sem a 016: segue sem aviso */ }
 }
 
-// próxima troca: "última + intervalo" ou, no plano pela planilha (por_marcos), as horas fixas dela
-// (ex.: balão com 500 h e depois 2.000, 4.000...). Troca feita um pouco antes ou depois da marca conta para ela.
+// próxima troca pelas horas fixas do horímetro, múltiplas do intervalo (ex.: a cada 50 h, com 130 h -> 150, 200, 250...);
+// no plano pela planilha pode haver uma primeira antes (balão com 500 h e depois 2.000, 4.000...).
+// Troca feita um pouco antes ou depois da marca conta para ela. Pedido do Alfredo em 2026-10-26: vale para todos os serviços.
 function proximaManut(p, feito, atual) {
   const i = Number(p.intervalo_h), f = Number(p.primeira_h) || 0;
-  if (!p.por_marcos) return feito != null ? feito + i : null;
   const depoisDe = ref => (f && f < i && ref < f) ? f : (Math.floor(ref / i) + 1) * i;
   if (feito != null) return depoisDe(feito + i * 0.25);
   return atual != null ? depoisDe(Math.max(0, atual - 0.01)) : (f && f < i ? f : i);
 }
 const intervaloTxt = p => p.por_marcos
   ? `${Number(p.primeira_h) && Number(p.primeira_h) < Number(p.intervalo_h) ? `primeira com ${lit(p.primeira_h)} h, depois ` : ""}a cada ${lit(p.intervalo_h)} h (horas da planilha)`
-  : `a cada ${lit(p.intervalo_h)} h`;
+  : `a cada ${lit(p.intervalo_h)} h (${lit(p.intervalo_h)}, ${lit(2 * p.intervalo_h)}, ${lit(3 * p.intervalo_h)} h...)`;
 
 // situação de cada serviço do plano: último feito (pelo histórico) e quanto falta
 function situacaoPlano(maqId, atual) {
@@ -3302,7 +3302,7 @@ function mostrarManut() {
     ["Custo de diesel", real(rd.custo), `no período · ${lit(rd.litros)} L${rd.semValor ? ` (${lit(rd.semValor)} L sem valor)` : ""}`],
     ["Custo total da máquina", real(custoManut + rd.custo), horas ? `${porHora(custoManut + rd.custo)} trabalhada (${lit(horas)} h)` : "sem horas no período"]]
     .map(([t, v, d, c]) => `<div class="kpi" ${c ? 'style="border-color:var(--erro)"' : ""}><small>${t}</small><b ${c ? 'style="color:var(--erro)"' : ""}>${v}</b><span class="delta">${esc(d)}</span></div>`).join("");
-  const sit = p => p.feito == null ? '<span style="color:var(--suave)">sem registro</span>'
+  const sit = p => p.falta == null ? '<span style="color:var(--suave)">sem registro</span>'
     : p.falta < 0 ? `<span style="color:var(--erro);font-weight:600">atrasada ${lit(-p.falta)} h</span>`
     : p.falta <= AVISO_MANUT_H ? `<span style="color:var(--aviso);font-weight:600">faltam ${lit(p.falta)} h</span>`
     : `<span style="color:var(--ok)">faltam ${lit(p.falta)} h</span>`;
@@ -3324,7 +3324,7 @@ function mostrarManut() {
   vencidas.forEach(p => al.push(`<b>${esc(p.servico)}</b> atrasada ${lit(-p.falta)} h.`));
   proximas.forEach(p => al.push(`${esc(p.servico)} em ${lit(p.falta)} h.`));
   const semReg = plano.filter(p => p.feito == null);
-  if (semReg.length) al.push(`${semReg.length} serviço(s) do plano sem registro. Lance a última vez que foi feito (data e horímetro) para o sistema calcular a próxima.`);
+  if (semReg.length) al.push(`${semReg.length} serviço(s) ainda sem nenhum registro: a próxima foi calculada pelo horímetro atual. Quando fizer, lance com <b>Feito</b>.`);
   const aConf = plano.filter(p => p.a_confirmar).length;
   if (aConf) al.push(`${aConf} intervalo(s) a confirmar no manual do fabricante.`);
   const corr = servPer.filter(s => s.tipo === "corretiva");
