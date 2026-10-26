@@ -683,7 +683,9 @@
       <div class="card">
         <h3 style="margin-top:0">Backup</h3>
         <p style="margin-top:0">Baixa uma cópia completa do banco (todas as tabelas) em Excel e em JSON. Guarde os dois arquivos no Google Drive ou num pendrive toda semana. A lista dos PDFs da balança vai junto; os PDFs em si você já guarda no computador da balança.</p>
-        <button class="bt" id="btBackup">Baixar backup completo</button>
+        <div class="linha"><button class="bt" id="btBackup">Baixar backup completo</button>
+          <button class="bt sec" id="btPastaBackup">Escolher pasta do backup</button></div>
+        <p id="pastaBackupTxt" style="color:var(--suave);font-size:13px"></p>
         <div id="backupMsg"></div>
       </div>
     </section>
@@ -1920,10 +1922,49 @@ $("#pClientes").addEventListener("click", e => {
 });
 
 // ------------------------------------------------------------------ backup (administrador)
+// pasta do backup: no Chrome/Edge do computador, o sistema guarda a pasta escolhida e grava os arquivos direto nela.
+// O navegador não deixa um site gravar sozinho, sem clique: o backup continua sendo pelo botão.
+const pastaDb = () => new Promise((ok, erro) => { const r = indexedDB.open("geolux_backup", 1);
+  r.onupgradeneeded = () => r.result.createObjectStore("cfg"); r.onsuccess = () => ok(r.result); r.onerror = () => erro(r.error); });
+async function pastaBackup(nova) {
+  try {
+    const db_ = await pastaDb();
+    if (nova !== undefined) { await new Promise(ok => { const t = db_.transaction("cfg", "readwrite"); t.objectStore("cfg").put(nova, "pasta"); t.oncomplete = ok; }); return nova; }
+    return await new Promise(ok => { const g = db_.transaction("cfg").objectStore("cfg").get("pasta"); g.onsuccess = () => ok(g.result || null); g.onerror = () => ok(null); });
+  } catch { return null; }
+}
+async function mostrarPastaBackup() {
+  if (!window.showDirectoryPicker) {
+    $("#btPastaBackup").classList.add("escondido");
+    return $("#pastaBackupTxt").innerHTML = "Os arquivos vão para a pasta de downloads do navegador. Para gravar direto numa pasta de backup, use o Chrome ou o Edge no computador.";
+  }
+  const p = await pastaBackup();
+  $("#pastaBackupTxt").innerHTML = p ? `Os arquivos são gravados na pasta <b>${esc(p.name)}</b>. Se for uma pasta do Google Drive no computador, eles sobem para o Drive sozinhos.`
+    : "Nenhuma pasta escolhida: os arquivos vão para a pasta de downloads do navegador.";
+}
+$("#btPastaBackup").addEventListener("click", async () => {
+  try { const p = await window.showDirectoryPicker({ id: "geolux-backup", mode: "readwrite" }); await pastaBackup(p); mostrarPastaBackup();
+    msg("#backupMsg", "ok", `Pasta <b>${esc(p.name)}</b> escolhida. Os próximos backups vão direto para ela.`);
+  } catch (e) { if (e.name !== "AbortError") msg("#backupMsg", "erro", "Não foi possível usar essa pasta. " + erroTxt(e)); }
+});
+document.querySelector('#abas [data-aba="fechamento"]').addEventListener("click", mostrarPastaBackup);
+// grava na pasta escolhida; sem pasta (ou sem permissão), baixa como antes. Devolve o nome da pasta usada.
+async function salvarBackup(arquivos) {
+  const p = window.showDirectoryPicker ? await pastaBackup() : null;
+  if (p) {
+    try {
+      if ((await p.queryPermission({ mode: "readwrite" })) !== "granted" && (await p.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error("sem permissão");
+      for (const [blob, nome] of arquivos) { const f = await (await p.getFileHandle(nome, { create: true })).createWritable(); await f.write(blob); await f.close(); }
+      return p.name || "escolhida";
+    } catch { /* pasta apagada, movida ou sem permissão: baixa normalmente */ }
+  }
+  for (const [blob, nome] of arquivos) baixar(blob, nome);
+  return null;
+}
 $("#btBackup").addEventListener("click", async () => {
   msg("#backupMsg", "aviso", "Gerando backup…");
   try {
-    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "almox_categorias", "almox_itens", "almox_movimentos", "auditoria"];
+    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "almox_categorias", "almox_itens", "almox_movimentos", "manut_plano_pecas", "pesagens_conferidas", "auditoria"];
     const dados = {};
     for (const t of tabelas) {
       dados[t] = [];
@@ -1936,7 +1977,7 @@ $("#btBackup").addEventListener("click", async () => {
       }
     }
     const quando = new Date(), carimbo = iso(quando) + "_" + String(quando.getHours()).padStart(2, "0") + String(quando.getMinutes()).padStart(2, "0");
-    baixar(new Blob([JSON.stringify({ gerado_em: quando.toISOString(), tabelas: dados }, null, 1)], { type: "application/json" }), `Geolux_backup_${carimbo}.json`);
+    const json = new Blob([JSON.stringify({ gerado_em: quando.toISOString(), tabelas: dados }, null, 1)], { type: "application/json" });
     const wb = new ExcelJS.Workbook();
     for (const t of tabelas) {
       const ws = wb.addWorksheet(t);
@@ -1944,9 +1985,11 @@ $("#btBackup").addEventListener("click", async () => {
       ws.addRow(cols).font = { bold: true };
       for (const r of dados[t]) ws.addRow(cols.map(c => r[c] !== null && typeof r[c] === "object" ? JSON.stringify(r[c]) : r[c]));
     }
-    baixar(new Blob([await wb.xlsx.writeBuffer()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `Geolux_backup_${carimbo}.xlsx`);
+    const xlsx = new Blob([await wb.xlsx.writeBuffer()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const pasta = await salvarBackup([[json, `Geolux_backup_${carimbo}.json`], [xlsx, `Geolux_backup_${carimbo}.xlsx`]]);
     gravarLocal("geolux_ultimo_backup", String(Date.now()));
-    msg("#backupMsg", "ok", `Backup gerado: ${dados.pesagens.length} carradas, ${dados.clientes.length} clientes, ${dados.importacoes.length} relatórios anexados.`);
+    msg("#backupMsg", "ok", `Backup gerado: ${dados.pesagens.length} carradas, ${dados.clientes.length} clientes, ${dados.importacoes.length} relatórios anexados. ` +
+      (pasta ? `Os 2 arquivos foram gravados na pasta <b>${esc(pasta)}</b>.` : "Os 2 arquivos foram para a pasta de downloads do navegador."));
   } catch (e) { msg("#backupMsg", "erro", "Não foi possível gerar o backup. " + erroTxt(e)); }
 });
 
