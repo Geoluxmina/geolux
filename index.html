@@ -3218,9 +3218,10 @@ async function avisoManutEntrada() {
       const atual = Math.max(...hs);
       for (const p of plano.data.filter(p => p.maquina_id === m.id)) {
         const ult = Math.max(-1, ...servicos.data.filter(s => s.plano_id === p.id && s.horimetro != null).map(s => Number(s.horimetro)));
-        if (ult < 0) continue;
-        const falta = ult + Number(p.intervalo_h) - atual;
-        if (falta <= AVISO_MANUT_H) itens.push({ maq: m.nome, servico: p.servico, falta, proxima: ult + Number(p.intervalo_h), atual });
+        const proxima = proximaManut(p, ult >= 0 ? ult : null, atual);
+        if (proxima == null) continue;
+        const falta = proxima - atual;
+        if (falta <= AVISO_MANUT_H) itens.push({ maq: m.nome, servico: p.servico, falta, proxima, atual });
       }
     }
     if (!itens.length) return;
@@ -3242,12 +3243,25 @@ async function avisoManutEntrada() {
   } catch { /* sem internet ou sem a 016: segue sem aviso */ }
 }
 
+// próxima troca: "última + intervalo" ou, no plano pela planilha (por_marcos), as horas fixas dela
+// (ex.: balão com 500 h e depois 2.000, 4.000...). Troca feita um pouco antes ou depois da marca conta para ela.
+function proximaManut(p, feito, atual) {
+  const i = Number(p.intervalo_h), f = Number(p.primeira_h) || 0;
+  if (!p.por_marcos) return feito != null ? feito + i : null;
+  const depoisDe = ref => (f && f < i && ref < f) ? f : (Math.floor(ref / i) + 1) * i;
+  if (feito != null) return depoisDe(feito + i * 0.25);
+  return atual != null ? depoisDe(Math.max(0, atual - 0.01)) : (f && f < i ? f : i);
+}
+const intervaloTxt = p => p.por_marcos
+  ? `${Number(p.primeira_h) && Number(p.primeira_h) < Number(p.intervalo_h) ? `primeira com ${lit(p.primeira_h)} h, depois ` : ""}a cada ${lit(p.intervalo_h)} h (horas da planilha)`
+  : `a cada ${lit(p.intervalo_h)} h`;
+
 // situação de cada serviço do plano: último feito (pelo histórico) e quanto falta
 function situacaoPlano(maqId, atual) {
   const feitos = mz.servicos.filter(s => s.maquina_id === maqId && s.situacao === "valida" && s.plano_id != null && s.horimetro != null);
   return mz.plano.filter(p => p.maquina_id === maqId && p.ativo).map(p => {
     const ult = feitos.filter(s => s.plano_id === p.id).reduce((m, s) => Math.max(m, Number(s.horimetro)), -1);
-    const feito = ult >= 0 ? ult : null, proxima = feito != null ? feito + Number(p.intervalo_h) : null;
+    const feito = ult >= 0 ? ult : null, proxima = proximaManut(p, feito, atual);
     return { ...p, feito, proxima, falta: proxima != null && atual != null ? proxima - atual : null };
   });
 }
@@ -3294,7 +3308,7 @@ function mostrarManut() {
   const adm = papel === "admin";
   $("#mPlano").innerHTML = !plano.length ? '<div class="vazio">Nenhum serviço no plano.</div>' :
     `<table><tr><th>Serviço</th><th class="n">Próxima</th><th>Situação</th><th></th></tr>` +
-    plano.map(p => `<tr><td style="white-space:normal;min-width:140px">${esc(p.servico)}<br><small style="color:var(--suave)">a cada ${lit(p.intervalo_h)} h · feito em ${horasTxt(p.feito)}</small>${p.a_confirmar ? ' <small class="alerta">a confirmar</small>' : ""}${materialHtml(p, adm)}</td><td class="n">${horasTxt(p.proxima)}</td><td style="white-space:normal">${sit(p)}</td>` +
+    plano.map(p => `<tr><td style="white-space:normal;min-width:140px">${esc(p.servico)}<br><small style="color:var(--suave)">${intervaloTxt(p)} · feito em ${horasTxt(p.feito)}</small>${p.a_confirmar ? ' <small class="alerta">a confirmar</small>' : ""}${materialHtml(p, adm)}</td><td class="n">${horasTxt(p.proxima)}</td><td style="white-space:normal">${sit(p)}</td>` +
       `<td style="white-space:nowrap"><button class="mini" data-mfeito="${p.id}">Feito</button>${adm ? ` <button class="mini" data-mintervalo="${p.id}">Intervalo</button> <button class="mini" data-mtirar="${p.id}">Tirar</button>` : ""}</td></tr>`).join("") + "</table>";
   $("#msPlano").innerHTML = '<option value="">— fora do plano —</option>' + plano.map(p => `<option value="${p.id}">${esc(p.servico)}</option>`).join("");
   $("#mqPlano").innerHTML = plano.map(p => `<option value="${p.id}">${esc(p.servico)}</option>`).join("");
