@@ -3985,16 +3985,37 @@ async function pdfCobranca(id) {
   doc.save(`${c.numero}-${normNome(c.cliente).replace(/[^a-z0-9]+/g, "-")}.pdf`);
 }
 
-// extrato do cliente: cobranças e recebimentos com o saldo
-function pdfExtratoCr(id) {
-  const cli = cliCr(id); if (!cli) return;
-  const movs = [
-    ...rz.cobrancas.filter(c => c.cliente_id === id && c.situacao === "valida").map(c => ({ data: c.periodo_ate, txt: `Cobrança ${c.numero} (${br(c.periodo_de)} a ${br(c.periodo_ate)}, vence ${br(c.vencimento)})`, deb: Number(c.valor), cred: 0 })),
-    ...rz.recebimentos.filter(r => r.cliente_id === id && r.situacao === "valida").map(r => ({ data: r.recebido_em, txt: `Recebimento ${r.forma}${r.observacao ? " · " + r.observacao : ""}`, deb: 0, cred: Number(r.valor) }))
-  ].sort((a, b) => a.data.localeCompare(b.data) || b.deb - a.deb);
-  if (!movs.length) return msg("#rMsg", "aviso", `${esc(cli.nome)} ainda não tem cobranças nem recebimentos.`);
-  let saldo = 0;
-  const body = movs.map(m => { saldo += m.deb - m.cred; return [br(m.data), m.txt, m.deb ? real(m.deb) : "", m.cred ? real(m.cred) : "", real(saldo)]; });
+// extrato do cliente no período: 1) carradas, 2) diesel fornecido pelo cliente, 3) pagamentos, 4) resumo
+async function pdfExtratoCr(id, de, ate) {
+  const cli = cliCr(id); if (!cli) return "Cliente não encontrado.";
+  const nomeProd = pid => rz.produtos.find(p => p.id === pid)?.nome || "—";
+  const cobs = rz.cobrancas.filter(c => c.cliente_id === id && c.situacao === "valida");
+  const numCob = Object.fromEntries(cobs.map(c => [c.id, c.numero]));
+  let its = [];
+  const ids = cobs.map(c => c.id);
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await db.from("cr_cobranca_itens").select("*").in("cobranca_id", ids.slice(i, i + 200)).eq("ativo", true).gte("data", de).lte("data", ate);
+    if (error) return erroCr(error);
+    its.push(...data.map(x => ({ ...x, cob: numCob[x.cobranca_id] })));
+  }
+  its.push(...rz.aCobrar.filter(x => x.cliente_id === id && x.data >= de && x.data <= ate)
+    .map(x => ({ ticket: x.ticket, data: x.data, produto_id: x.produto_id, liquido_kg: x.liquido_kg, cobra_por: x.cobra_por, preco: x.preco, valor: x.valor, placa: x.placa, cob: "a cobrar" })));
+  its.sort((a, b) => a.data.localeCompare(b.data) || a.ticket - b.ticket);
+  const semPlaca = its.filter(x => !x.placa).map(x => x.ticket), placas = {};
+  for (let i = 0; i < semPlaca.length; i += 300) {
+    const { data } = await db.from("pesagens").select("ticket,placa").in("ticket", semPlaca.slice(i, i + 300));
+    (data || []).forEach(p => placas[p.ticket] = p.placa);
+  }
+  const dz = (rz.diesel || []).filter(x => x.cliente_id === id && x.data >= de && x.data <= ate).sort((a, b) => a.data.localeCompare(b.data));
+  let pags = [];
+  if (dz.length) {
+    const { data } = await db.from("v_cp_pagamentos").select("*").in("carga_id", dz.map(x => x.carga_id)).eq("situacao", "valida");
+    pags = data || [];
+  }
+  const recs = rz.recebimentos.filter(r => r.cliente_id === id && r.situacao === "valida" && r.forma !== "Abatimento diesel" && r.recebido_em >= de && r.recebido_em <= ate)
+    .sort((a, b) => a.recebido_em.localeCompare(b.recebido_em));
+  if (!its.length && !dz.length && !recs.length) return `${cli.nome} não tem carradas, diesel nem pagamentos de ${br(de)} a ${br(ate)}.`;
+
   const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
   const azul = [31, 58, 95], W = 210, M = 12;
   doc.addImage(LOGO, "PNG", M, 7, 42, 12);
@@ -4002,13 +4023,88 @@ function pdfExtratoCr(id) {
   doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(110); doc.text(ENDERECO, M + 46, 17);
   doc.setDrawColor(...azul); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21);
   doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(0); doc.text(`Extrato do cliente: ${cli.nome}`, M, 29);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60); doc.text(`Posição em ${new Date().toLocaleDateString("pt-BR")}`, M, 35);
-  doc.autoTable({ margin: { left: M, right: M, bottom: 14 }, startY: 40, styles: { fontSize: 8.5, cellPadding: 1.8 }, headStyles: { fillColor: azul, textColor: 255 },
-    footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" }, alternateRowStyles: { fillColor: [244, 245, 247] },
-    head: [["Data", "Lançamento", "Cobrado", "Recebido", "Saldo"]], body,
-    foot: [["", saldo < -0.004 ? "CRÉDITO DO CLIENTE" : "SALDO A RECEBER", "", "", real(Math.abs(saldo))]],
-    columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } });
-  doc.save(`extrato-${normNome(cli.nome).replace(/[^a-z0-9]+/g, "-")}-${hojeBR()}.pdf`);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
+  doc.text([`Período: ${br(de)} a ${br(ate)}`, cli.cpf_cnpj ? `CPF/CNPJ: ${cli.cpf_cnpj}` : "", `emitido em ${new Date().toLocaleDateString("pt-BR")}`].filter(Boolean).join("   ·   "), M, 35);
+  const rodape = () => { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(130);
+    doc.text(`Extrato ${cli.nome} · ${br(de)} a ${br(ate)} · emitido em ${new Date().toLocaleString("pt-BR")}`, M, 289);
+    doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 289, { align: "right" }); };
+  const tab = { margin: { left: M, right: M, bottom: 14 }, styles: { fontSize: 8.5, cellPadding: 1.6 }, headStyles: { fillColor: azul, textColor: 255 },
+    footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" }, alternateRowStyles: { fillColor: [244, 245, 247] }, didDrawPage: rodape };
+  let y = 42;
+  const titulo = t => { if (y > 262) { doc.addPage(); y = 20; } doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...azul); doc.text(t, M, y); y += 3; };
+  const linha = (t, v, neg) => { doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(0); if (y > 280) { doc.addPage(); y = 20; } doc.text(t, M + 2, y); doc.text((neg ? "- " : "") + real(v), W - M, y, { align: "right" }); y += 6; };
+
+  // 1) carradas
+  const ton = its.filter(x => x.cobra_por !== "carrada"), barro = its.filter(x => x.cobra_por === "carrada");
+  const kgT = ton.reduce((t, x) => t + x.liquido_kg, 0), totCarr = its.reduce((t, x) => t + Number(x.valor || 0), 0);
+  titulo(`1. Carradas retiradas no período: ${its.length}`);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
+  doc.text(`${ton.length} carrada(s) pesada(s) = ${(kgT / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} t` + (barro.length ? `   ·   ${barro.length} carrada(s) de barro` : ""), M, y + 3); y += 6;
+  if (its.length) {
+    doc.autoTable({ ...tab, startY: y,
+      head: [["Data", "Ticket", "Placa", "Produto", "Quantidade", "Preço", "Valor", "Cobrança"]],
+      body: its.map(x => [br(x.data), x.ticket, x.placa || placas[x.ticket] || "", nomeProd(x.produto_id), qtdItem(x), x.preco == null ? "sem preço" : real(x.preco) + (x.cobra_por === "carrada" ? "/carrada" : "/t"), x.valor == null ? "—" : real(x.valor), x.cob]),
+      foot: [["TOTAL", `${its.length} carradas`, "", "", (kgT / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + " t", "", real(totCarr), ""]],
+      columnStyles: { 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" } } });
+    y = doc.lastAutoTable.finalY + 9;
+  } else y += 4;
+
+  // 2) diesel
+  const totL = dz.reduce((t, x) => t + Number(x.litros || 0), 0), totDz = dz.reduce((t, x) => t + Number(x.valor || 0), 0);
+  const abat = dz.reduce((t, x) => t + Number(x.abatido || 0), 0), dzAberto = dz.reduce((t, x) => t + Number(x.saldo || 0), 0);
+  if (dz.length) {
+    titulo(`2. Diesel retirado no período: ${dz.length} carga(s), ${totL.toLocaleString("pt-BR")} litros`);
+    y += 1;
+    doc.autoTable({ ...tab, startY: y,
+      head: [["Data", "Carga", "Litros", "Preço do litro", "Valor", "Situação"]],
+      body: dz.map(x => { const pp = pags.filter(p => p.carga_id === x.carga_id);
+        const sit = Number(x.saldo) <= 0.004 ? (pp.some(p => p.recebimento_id) ? `abatido${pp.find(p => p.cobranca) ? " na " + pp.find(p => p.cobranca).cobranca : " (crédito)"}` : "pago")
+          : Number(x.abatido) > 0 ? `abatido ${real(x.abatido)}, falta ${real(x.saldo)}` : "a abater";
+        return [br(x.data), x.codigo || "", Number(x.litros || 0).toLocaleString("pt-BR") + " L", x.litros ? real(Number(x.valor) / Number(x.litros)) : "", real(x.valor), sit]; }),
+      foot: [["TOTAL", `${dz.length} carga(s)`, totL.toLocaleString("pt-BR") + " L", "", real(totDz), ""]],
+      columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } });
+    y = doc.lastAutoTable.finalY + 9;
+  }
+
+  // 3) pagamentos
+  const totRec = recs.reduce((t, r) => t + Number(r.valor), 0);
+  if (recs.length) {
+    titulo(`${dz.length ? 3 : 2}. Pagamentos recebidos no período`);
+    y += 1;
+    doc.autoTable({ ...tab, startY: y, head: [["Data", "Forma", "Valor", "Observação"]],
+      body: recs.map(r => [br(r.recebido_em), r.forma, real(r.valor), r.observacao || ""]),
+      foot: [["TOTAL", "", real(totRec), ""]], columnStyles: { 2: { halign: "right" } } });
+    y = doc.lastAutoTable.finalY + 9;
+  }
+
+  // 4) resumo
+  titulo(`${2 + (dz.length ? 1 : 0) + (recs.length ? 1 : 0)}. Resumo do período`); y += 4;
+  linha(`Carradas (${its.length})`, totCarr);
+  if (abat > 0) linha("Diesel abatido", abat, true);
+  if (totRec > 0) linha("Pagamentos recebidos", totRec, true);
+  const saldoP = totCarr - abat - totRec;
+  doc.setDrawColor(180); doc.setLineWidth(0.2); doc.line(W - M - 70, y - 4, W - M, y - 4);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11);
+  doc.text(saldoP < -0.004 ? "Crédito do cliente no período" : "Saldo do período a pagar", M + 2, y); doc.text(real(Math.abs(saldoP)), W - M, y, { align: "right" }); y += 8;
+  if (dzAberto > 0.004) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60); doc.text(`Diesel ainda não abatido: ${real(dzAberto)} (será descontado na próxima cobrança).`, M + 2, y); y += 6; }
+  const abertas = cobs.filter(c => Number(c.saldo) > 0.004);
+  if (abertas.length) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
+    doc.text(`Cobranças em aberto: ${abertas.map(c => `${c.numero} saldo ${real(c.saldo)}, vence ${br(c.vencimento)}`).join("; ")}.`, M + 2, y, { maxWidth: W - 2 * M - 4 });
+  }
+  if (cobs.some(c => c.teste && its.some(x => x.cobranca_id === c.id)) || its.some(x => x.cob === "a cobrar") && modoTeste) marcaTeste(doc);
+  doc.save(`extrato-${normNome(cli.nome).replace(/[^a-z0-9]+/g, "-")}-${de}-a-${ate}.pdf`);
+}
+function pedirExtratoCr(id) {
+  const cli = cliCr(id); if (!cli) return;
+  const hoje = hojeBR();
+  janelaEditar(`Extrato de ${esc(cli.nome)}`, [
+    { nome: "de", rotulo: "De", tipo: "date", valor: hoje.slice(0, 8) + "01" },
+    { nome: "ate", rotulo: "Até", tipo: "date", valor: hoje }], async v => {
+    if (!v.de || !v.ate) return "Informe o período.";
+    if (v.de > v.ate) return "A data De é depois da data Até.";
+    return await pdfExtratoCr(id, v.de, v.ate);
+  }, () => {}, true);
 }
 
 const irReceber = parte => document.querySelector(`#abas [data-aba="receber"][data-parte="${parte}"]`).click();
@@ -4118,7 +4214,7 @@ document.addEventListener("click", async e => {
     const m = `Diesel abatido: ${real(tot)}. Saldo da cobrança ${esc(c.numero)}: ${real(n?.saldo)}. <button class="mini" data-rpdf="${c.id}">Baixar PDF</button>`;
     msg("#rMsg", "ok", m); if (!$("#rgMsg").classList.contains("escondido")) msg("#rgMsg", "ok", m); return;
   }
-  if (ds.rextrato) return pdfExtratoCr(Number(ds.rextrato));
+  if (ds.rextrato) return pedirExtratoCr(Number(ds.rextrato));
   if (ds.rreceber || ds.rreceberCli) {
     const c = ds.rreceber ? rz.cobrancas.find(x => x.id === Number(ds.rreceber)) : null;
     irReceber("recebimentos"); $("#rrCliente").value = c ? c.cliente_id : ds.rreceberCli; opcoesCobrancaRec(c?.id);
@@ -4191,7 +4287,7 @@ function marcaTeste(doc) {
   for (let i = 1; i <= doc.internal.getNumberOfPages(); i++) {
     doc.setPage(i); doc.setFont("helvetica", "bold"); doc.setFontSize(60); doc.setTextColor(230, 150, 40);
     doc.text("TESTE", 105, 160, { align: "center", angle: 30 });
-    doc.setFontSize(10); doc.text("Documento de teste, sem valor", 105, 170, { align: "center" });
+    doc.setFontSize(10); doc.text("DOCUMENTO DE TESTE, SEM VALOR", 105, 284, { align: "center" });
   }
 }
 const dieselAberto = cliId => (rz?.diesel || []).filter(x => x.cliente_id === cliId && Number(x.saldo) > 0.004).sort((a, b) => a.data.localeCompare(b.data));
