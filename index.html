@@ -30,9 +30,11 @@
   #aba-almox .linha > label { min-width:0; max-width:100%; }
   #aba-almox td input { min-width:0; width:90px; }
   #aKpis .kpi { flex:1 1 140px; }
+  #rKpis .kpi { flex:1 1 140px; }
   .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:9px; background:var(--azul2); color:var(--azul); font-weight:normal; }
   @media (max-width:640px) { #aba-almox .linha > label { flex:1 1 100%; } #aba-almox .linha > label > input:not([type=checkbox]), #aba-almox .linha > label > select { width:100%; min-width:0 !important; font-size:16px; }
     #aba-almox .painel-grade { grid-template-columns:1fr !important; } }
+  @media (max-width:640px) { #aba-receber .linha > label { flex:1 1 100%; } #aba-receber .linha > label > input, #aba-receber .linha > label > select { width:100%; min-width:0 !important; font-size:16px; box-sizing:border-box; } }
   .pergunta { position:sticky; bottom:0; z-index:5; background:#fff; margin-bottom:0; border:2px solid var(--azul); box-shadow:0 -4px 12px rgba(0,0,0,.12); }
   header .logo { height:38px; background:#fff; border-radius:6px; padding:4px 8px; }
   #login .logo { display:block; height:56px; margin:0 auto 12px; }
@@ -164,6 +166,14 @@
       <button data-aba="almox" data-parte="estoque">Inventário</button>
       <button data-aba="almox" data-parte="cadastro">Cadastro de itens</button>
       <button data-aba="almox" data-parte="contagem">Contagem</button>
+    </div>
+    <div class="grupo" data-grupo="receber" data-admin>
+      <h4>Contas a receber</h4>
+      <button data-aba="receber" data-parte="resumo">Resumo</button>
+      <button data-aba="receber" data-parte="cobrar">Gerar cobrança</button>
+      <button data-aba="receber" data-parte="cobrancas">Cobranças</button>
+      <button data-aba="receber" data-parte="recebimentos">Recebimentos</button>
+      <button data-aba="receber" data-parte="precos">Preços e prazos</button>
     </div>
     <div class="grupo" data-grupo="sistema" data-admin>
       <h4>Sistema</h4>
@@ -684,6 +694,84 @@
         </div>
       </div>
     </section>
+    <!-- CONTAS A RECEBER (só administrador) -->
+    <section id="aba-receber" class="escondido">
+      <div id="rMsg"></div>
+      <div class="kpis" id="rKpis" data-parte="resumo"></div>
+      <div class="card" data-parte="resumo" id="rAtencaoCard"><h3 style="margin-top:0">Atenção</h3><div id="rAtencao"></div></div>
+      <div class="card" data-parte="resumo">
+        <h3 style="margin-top:0">Saldo por cliente</h3>
+        <p style="margin-top:0;color:var(--suave);font-size:13px">Cobrado = cobranças geradas. Saldo = o que falta receber delas. Sem cobrança = carradas que ainda não entraram em nenhuma cobrança.</p>
+        <div class="tabela" id="rSaldos"></div>
+      </div>
+      <div class="card" data-parte="cobrar">
+        <h3 style="margin-top:0">Prontas para cobrar</h3>
+        <p style="margin-top:0;color:var(--suave);font-size:13px">Carradas que ainda não estão em nenhuma cobrança, separadas pelo período de cada cliente (semanal, quinzenal ou mensal).</p>
+        <div class="tabela" id="rProntas"></div>
+      </div>
+      <div class="card" data-parte="cobrar" id="rGerarCard">
+        <h3 style="margin-top:0">Gerar cobrança</h3>
+        <div class="linha">
+          <label>Cliente <select id="rgCliente"></select></label>
+          <label>De <input type="date" id="rgDe"></label>
+          <label>Até <input type="date" id="rgAte"></label>
+          <label>Vencimento <input type="date" id="rgVenc"></label>
+          <label style="flex:1 1 200px">Observação <input id="rgObs" placeholder="opcional"></label>
+        </div>
+        <div id="rgResumo" style="margin:12px 0"></div>
+        <div class="tabela" id="rgItens"></div>
+        <div class="linha" style="margin-top:12px"><button class="bt" id="btGerarCobranca">Gerar cobrança</button></div>
+        <div id="rgMsg"></div>
+      </div>
+      <div class="card linha" data-parte="cobrancas">
+        <label>Cliente <select id="rcCliente"></select></label>
+        <label>Situação <select id="rcSit"><option value="aberto">Em aberto</option><option value="vencida">Vencidas</option><option value="paga">Pagas</option><option value="todas">Todas</option><option value="cancelada">Canceladas</option></select></label>
+      </div>
+      <div class="card" data-parte="cobrancas">
+        <h3 style="margin-top:0">Cobranças</h3>
+        <div class="tabela" id="rCobrancas"></div>
+      </div>
+      <div class="card" data-parte="recebimentos" id="rrCard">
+        <h3 style="margin-top:0">Lançar recebimento</h3>
+        <div class="linha">
+          <label>Cliente <select id="rrCliente"></select></label>
+          <label>Abater em <select id="rrCobranca"></select></label>
+          <label>Data <input type="date" id="rrData"></label>
+          <label>Valor (R$) <input id="rrValor" inputmode="decimal" placeholder="0,00"></label>
+          <label>Forma <select id="rrForma"></select></label>
+          <label style="flex:1 1 200px">Observação <input id="rrObs" placeholder="opcional"></label>
+        </div>
+        <p style="color:var(--suave);font-size:13px;margin:8px 0">Sem escolher a cobrança, o valor abate as cobranças mais antigas em aberto. O que sobrar fica de crédito do cliente e abate a próxima cobrança.</p>
+        <button class="bt" id="btReceber">Salvar recebimento</button>
+        <div id="rrMsg"></div>
+      </div>
+      <div class="card" data-parte="recebimentos">
+        <h3 style="margin-top:0">Recebimentos lançados</h3>
+        <div class="tabela" id="rRecebimentos"></div>
+      </div>
+      <div class="card" data-parte="precos">
+        <h3 style="margin-top:0">Preços e prazos do cliente</h3>
+        <div class="linha">
+          <label>Cliente <select id="rpCliente"></select></label>
+          <label>Cobrança <select id="rpPeriodo"><option value="semanal">Semanal (segunda a domingo)</option><option value="quinzenal">Quinzenal (1 a 15 e 16 ao fim do mês)</option><option value="mensal">Mensal</option></select></label>
+          <label>Prazo para pagar (dias depois do período) <input type="number" id="rpPrazo" min="0" max="365" step="1"></label>
+          <button class="bt sec" id="btSalvarPrazo">Salvar forma de cobrança</button>
+        </div>
+        <div class="linha" style="margin-top:16px">
+          <label>Preço por tonelada (R$) <input id="rpTon" inputmode="decimal" placeholder="0,00"></label>
+          <label>Preço da carrada de barro (R$) <input id="rpBarro" inputmode="decimal" placeholder="só se comprar barro"></label>
+          <label>Vale a partir de <input type="date" id="rpVale"></label>
+          <button class="bt" id="btSalvarPreco">Salvar preço</button>
+        </div>
+        <p style="color:var(--suave);font-size:13px;margin:8px 0">Preço novo vale para as carradas a partir da data escolhida; as anteriores continuam com o preço antigo. O preço por tonelada vale para todos os produtos pesados (calcário e rejeito).</p>
+        <div id="rpMsg"></div>
+        <div class="tabela" id="rpHist"></div>
+      </div>
+      <div class="card" data-parte="precos">
+        <h3 style="margin-top:0">Todos os clientes</h3>
+        <div class="tabela" id="rpTodos"></div>
+      </div>
+    </section>
     <section id="aba-fechamento" class="escondido">
       <div class="card">
         <h3 style="margin-top:0">Backup</h3>
@@ -1011,6 +1099,7 @@ document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click
   if (b.dataset.aba === "diesel") carregarDiesel();
   if (b.dataset.aba === "manutencao") carregarManut();
   if (b.dataset.aba === "almox") carregarAlmox();
+  if (b.dataset.aba === "receber") carregarReceber();
 }));
 
 // ------------------------------------------------------------------ anexar relatório
@@ -1991,7 +2080,7 @@ async function salvarBackup(arquivos) {
 $("#btBackup").addEventListener("click", async () => {
   msg("#backupMsg", "aviso", "Gerando backup…");
   try {
-    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "almox_categorias", "almox_itens", "almox_movimentos", "manut_plano_pecas", "pesagens_conferidas", "auditoria"];
+    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "almox_categorias", "almox_itens", "almox_movimentos", "manut_plano_pecas", "pesagens_conferidas", "cr_precos", "cr_cobrancas", "cr_cobranca_itens", "cr_recebimentos", "cr_baixas", "auditoria"];
     const dados = {};
     for (const t of tabelas) {
       dados[t] = [];
@@ -2269,7 +2358,7 @@ function mostrarCargas() {
 const editadoTxt = x => x.editado_em ? `<br><small style="color:var(--suave)" title="${esc(x.motivo_edicao || "")}">editado em ${dataHora(x.editado_em)}${x.motivo_edicao ? ": " + esc(x.motivo_edicao) : ""}</small>` : "";
 const paraLocal = t => { const d = new Date(t); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 // janela com os campos; salvar(valores) devolve uma mensagem de erro ou nada
-function janelaEditar(titulo, campos, salvar) {
+function janelaEditar(titulo, campos, salvar, depois = carregarDiesel) {
   const caixa = document.createElement("div");
   caixa.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000;overflow:auto";
   caixa.innerHTML = `<div class="card" style="background:#fff;max-width:520px;width:100%;margin:auto;box-shadow:0 10px 30px rgba(0,0,0,.3)">
@@ -2287,7 +2376,7 @@ function janelaEditar(titulo, campos, salvar) {
     const erro = !v.motivo ? "Informe o motivo da edição." : await salvar(v);
     const box = caixa.querySelector("[data-erro]");
     if (erro) { box.textContent = erro; box.classList.remove("escondido"); return; }
-    caixa.remove(); carregarDiesel();
+    caixa.remove(); depois();
   };
 }
 const erroRpcEditar = e => /editar_(abastecimento|carga_diesel)/i.test(e.message) && /not find|does not exist|schema cache/i.test(e.message) ? "Falta rodar a query 021 no Supabase." : erroTxt(e);
@@ -3605,6 +3694,399 @@ $("#btPropria").addEventListener("click", async () => {
   const { error } = await db.from("maquinas").update({ propria: true }).eq("id", Number(id));
   if (error) return msg("#mMsg", "erro", erroTxt(error));
   await carregarManut(); $("#mMaq").value = id; mostrarManut();
+});
+// ------------------------------------------------------------------ contas a receber (só administrador)
+let rz = null;
+const FORMAS_REC = ["PIX", "Boleto", "Transferência", "Dinheiro", "Cheque", "Outro"];
+const NOME_PERIODO = { semanal: "semanal", quinzenal: "quinzenal", mensal: "mensal" };
+const valorBR = v => { let s = String(v ?? "").trim().replace(/[R$\s]/g, ""); if (!s) return null; if (s.includes(",")) s = s.replace(/\./g, "").replace(",", "."); const n = Number(s); return isNaN(n) ? NaN : n; };
+const real2 = n => Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const erroCr = e => /cr_|gerar_cobranca|lancar_recebimento|editar_(cobranca|recebimento)|cancelar_(cobranca|recebimento|preco)/i.test(e?.message || "") && /not find|does not exist|schema cache/i.test(e.message) ? "Falta rodar a query 022 no Supabase." : erroTxt(e);
+const fimDoMes = s => { const d = new Date(s.slice(0, 7) + "-01T12:00:00"); d.setMonth(d.getMonth() + 1); d.setDate(0); return iso(d); };
+// período (de, até) do cliente que contém o dia s
+function periodoCliente(c, s) {
+  if (c?.cobranca_periodo === "semanal") { const de = segundaDaSemana(s); return { de, ate: somaDias(de, 6) }; }
+  if (c?.cobranca_periodo === "quinzenal") return Number(s.slice(8, 10)) <= 15 ? { de: s.slice(0, 8) + "01", ate: s.slice(0, 8) + "15" } : { de: s.slice(0, 8) + "16", ate: fimDoMes(s) };
+  return { de: s.slice(0, 8) + "01", ate: fimDoMes(s) };
+}
+const vencimentoCliente = (c, ate) => somaDias(ate, Number(c?.prazo_dias || 0));
+const cliCr = id => rz.clientes.find(c => c.id === id);
+const qtdItem = x => x.cobra_por === "carrada" ? "1 carrada" : ton(x.liquido_kg) + " t";
+function sitCobranca(c, hoje = hojeBR()) {
+  if (c.situacao === "cancelada") return { txt: "cancelada", cor: "var(--suave)", chave: "cancelada" };
+  if (Number(c.saldo) <= 0.004) return { txt: "paga", cor: "var(--ok)", chave: "paga" };
+  const d = diasEntre(hoje, c.vencimento);
+  if (d < 0) return { txt: `vencida há ${-d} dia${d === -1 ? "" : "s"}`, cor: "var(--erro)", chave: "vencida" };
+  return { txt: d === 0 ? "vence hoje" : `vence em ${d} dia${d === 1 ? "" : "s"}`, cor: d <= 7 ? "var(--aviso)" : "var(--texto)", chave: "aberta" };
+}
+
+async function carregarReceber() {
+  msg("#rMsg", "", "");
+  try {
+    const [cl, pr, pc, cb, rc, ac] = await Promise.all([
+      db.from("clientes").select("*").order("nome"), db.from("produtos").select("*").order("nome"),
+      todasLinhas("cr_precos", "vale_de"), todasLinhas("v_cr_cobrancas", "id"), todasLinhas("v_cr_recebimentos", "id"), todasLinhas("v_cr_a_cobrar", "ticket")]);
+    if (cl.error) throw cl.error; if (pr.error) throw pr.error;
+    rz = { clientes: cl.data.filter(c => !c.unir_em), produtos: pr.data, precos: pc.filter(p => p.situacao === "valida"), precosTodos: pc,
+      cobrancas: cb, recebimentos: rc, aCobrar: ac };
+  } catch (e) { return msg("#rMsg", "erro", "Não foi possível carregar o contas a receber. " + erroCr(e)); }
+  const opCli = (todos, comPreco) => (todos ? `<option value="">${todos}</option>` : "") +
+    rz.clientes.filter(c => c.ativo || !comPreco).map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join("");
+  for (const [sel, todos] of [["#rcCliente", "Todos"], ["#rrCliente", null], ["#rpCliente", null], ["#rgCliente", null]]) {
+    const ant = $(sel).value; $(sel).innerHTML = opCli(todos, sel !== "#rcCliente");
+    if (ant && [...$(sel).options].some(o => o.value === ant)) $(sel).value = ant;
+  }
+  // cliente com preço primeiro nas telas de cobrar e receber
+  if (!$("#rgCliente").dataset.tocado) { const p = prontasParaCobrar()[0]; if (p) $("#rgCliente").value = p.cliente_id; }
+  if (!$("#rpCliente").dataset.tocado) { const comPreco = rz.clientes.find(c => rz.precos.some(p => p.cliente_id === c.id)); if (comPreco) $("#rpCliente").value = comPreco.id; }
+  $("#rrForma").innerHTML = FORMAS_REC.map(f => `<option>${f}</option>`).join("");
+  if (!$("#rrData").value) $("#rrData").value = hojeBR();
+  if (!$("#rpVale").value) $("#rpVale").value = hojeBR();
+  mostrarResumoCr(); mostrarProntas(); sugerirPeriodo(); mostrarCobrancas(); opcoesCobrancaRec(); mostrarRecebimentos(); mostrarPrecos();
+}
+
+function prontasParaCobrar() {
+  const hoje = hojeBR(), grupos = new Map();
+  for (const x of rz.aCobrar) {
+    const c = cliCr(x.cliente_id); if (!c) continue;
+    const per = periodoCliente(c, x.data), k = x.cliente_id + "|" + per.de;
+    const g = grupos.get(k) || { cliente_id: x.cliente_id, cliente: c.nome, ...per, n: 0, valor: 0, kg: 0, barro: 0, semPreco: 0 };
+    g.n++; g.valor += Number(x.valor || 0); if (x.cobra_por === "carrada") g.barro++; else g.kg += x.liquido_kg; if (x.preco == null) g.semPreco++;
+    grupos.set(k, g);
+  }
+  return [...grupos.values()].map(g => ({ ...g, fechado: g.ate < hoje })).sort((a, b) => (b.fechado - a.fechado) || a.de.localeCompare(b.de) || a.cliente.localeCompare(b.cliente));
+}
+
+function mostrarResumoCr() {
+  const hoje = hojeBR(), em7 = somaDias(hoje, 7), mes = hoje.slice(0, 7);
+  const abertas = rz.cobrancas.filter(c => c.situacao === "valida" && Number(c.saldo) > 0.004);
+  const soma = (l, f) => l.reduce((t, x) => t + Number(f(x) || 0), 0);
+  const vencidas = abertas.filter(c => c.vencimento < hoje), proximas = abertas.filter(c => c.vencimento >= hoje && c.vencimento <= em7);
+  const recMes = rz.recebimentos.filter(r => r.situacao === "valida" && r.recebido_em.slice(0, 7) === mes);
+  const semCob = soma(rz.aCobrar, x => x.valor), semPreco = rz.aCobrar.filter(x => x.preco == null);
+  const nCli = l => new Set(l.map(x => x.cliente_id)).size;
+  $("#rKpis").innerHTML = [
+    ["Total a receber", real(soma(abertas, c => c.saldo)), `${nCli(abertas)} cliente(s) com saldo`, ""],
+    ["Vencido", real(soma(vencidas, c => c.saldo)), `${nCli(vencidas)} cliente(s) atrasado(s)`, vencidas.length ? "border-color:var(--erro);color:var(--erro)" : ""],
+    ["Vence nos próximos 7 dias", real(soma(proximas, c => c.saldo)), `${proximas.length} cobrança(s)`, ""],
+    ["Recebido no mês", real(soma(recMes, r => r.valor)), `${recMes.length} recebimento(s)`, ""],
+    ["Ainda sem cobrança", real(semCob), `${rz.aCobrar.length} carrada(s)` + (semPreco.length ? `, ${semPreco.length} sem preço` : ""), ""]
+  ].map(([t, v, d, st]) => `<div class="kpi" style="${st}"><small>${t}</small><b style="${st ? "color:var(--erro)" : ""}">${v}</b><span class="delta">${d}</span></div>`).join("");
+  const linhas = rz.clientes.map(c => {
+    const cbs = rz.cobrancas.filter(x => x.cliente_id === c.id && x.situacao === "valida");
+    const ab = cbs.filter(x => Number(x.saldo) > 0.004).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+    const credito = soma(rz.recebimentos.filter(r => r.cliente_id === c.id && r.situacao === "valida"), r => r.credito);
+    const sem = soma(rz.aCobrar.filter(x => x.cliente_id === c.id), x => x.valor);
+    const preco = rz.precos.some(p => p.cliente_id === c.id);
+    return { c, cobrado: soma(cbs, x => x.valor), recebido: soma(cbs, x => x.recebido), saldo: soma(ab, x => x.saldo), credito, sem, preco, primeira: ab[0] };
+  }).filter(l => l.preco || l.cobrado || l.credito).sort((a, b) => b.saldo - a.saldo || a.c.nome.localeCompare(b.c.nome));
+  const tot = k => soma(linhas, l => l[k]);
+  $("#rSaldos").innerHTML = linhas.length ? `<table><tr><th>Cliente</th><th class="n">Cobrado</th><th class="n">Recebido</th><th class="n">Saldo</th><th class="n">Sem cobrança</th><th>Situação</th><th></th></tr>` +
+    linhas.map(l => { const s = l.primeira ? sitCobranca(l.primeira, hoje) : { txt: l.cobrado ? "quitado" : "—", cor: "var(--ok)" };
+      return `<tr><td><b>${esc(l.c.nome)}</b><br><small style="color:var(--suave)">${precoAtualTxt(l.c.id)} · ${NOME_PERIODO[l.c.cobranca_periodo] || "mensal"}, prazo ${l.c.prazo_dias || 0} dia(s)</small></td>
+        <td class="n">${real(l.cobrado)}</td><td class="n">${real(l.recebido)}</td><td class="n"><b>${real(l.saldo)}</b>${l.credito > 0.004 ? `<br><small style="color:var(--ok)">crédito ${real(l.credito)}</small>` : ""}</td>
+        <td class="n">${real(l.sem)}</td><td style="color:${s.cor};font-weight:600">${s.txt}</td>
+        <td style="white-space:nowrap"><button class="mini" data-rextrato="${l.c.id}">Extrato</button> <button class="mini" data-rreceber-cli="${l.c.id}">Recebimento</button></td></tr>`; }).join("") +
+    `<tr style="font-weight:700;background:var(--azul2)"><td>TOTAL</td><td class="n">${real(tot("cobrado"))}</td><td class="n">${real(tot("recebido"))}</td><td class="n">${real(tot("saldo"))}</td><td class="n">${real(tot("sem"))}</td><td></td><td></td></tr></table>`
+    : '<div class="vazio">Nenhum cliente com preço cadastrado ainda. Comece em Preços e prazos.</div>';
+  const at = [];
+  const porCli = new Map(); vencidas.forEach(c => porCli.set(c.cliente, Math.min(porCli.get(c.cliente) ?? 0, diasEntre(hoje, c.vencimento))));
+  for (const [nome, d] of porCli) at.push(`<b>${esc(nome)}</b>: ${real(soma(vencidas.filter(c => c.cliente === nome), c => c.saldo))} vencido há ${-d} dia(s).`);
+  proximas.forEach(c => at.push(`${esc(c.cliente)}: ${c.numero} de ${real(c.saldo)} ${sitCobranca(c, hoje).txt}.`));
+  const prontas = prontasParaCobrar().filter(g => g.fechado);
+  if (prontas.length) at.push(`${prontas.length} período(s) já terminado(s) para cobrar. Veja em <a href="#" data-rir="cobrar">Gerar cobrança</a>.`);
+  if (semPreco.length) at.push(`<b>${semPreco.length} carrada(s) sem preço</b> (${[...new Set(semPreco.map(x => x.produto || "produto sem cadastro"))].map(esc).join(", ")}). Cadastre em <a href="#" data-rir="precos">Preços e prazos</a>.`);
+  $("#rAtencao").innerHTML = at.length ? `<ul style="margin:0;padding-left:18px;line-height:1.5">${at.map(a => `<li>${a}</li>`).join("")}</ul>` : "";
+  $("#rAtencaoCard").classList.toggle("escondido", !at.length || !document.querySelector('#abas [data-parte="resumo"]').classList.contains("ativo"));
+}
+
+function precoAtualTxt(id, dia = hojeBR()) {
+  const ps = rz.precos.filter(p => p.cliente_id === id && p.vale_de <= dia), futuros = rz.precos.filter(p => p.cliente_id === id && p.vale_de > dia);
+  const ultimo = cobra => { const l = ps.filter(p => rz.produtos.find(x => x.id === p.produto_id)?.cobra_por === cobra).sort((a, b) => a.vale_de.localeCompare(b.vale_de)); return l[l.length - 1]; };
+  const t = ultimo("tonelada"), b = ultimo("carrada");
+  const partes = [t && `${real(t.valor)}/t`, b && `${real(b.valor)}/carrada de barro`].filter(Boolean);
+  if (!partes.length && futuros.length) { const f = futuros.sort((a, b) => a.vale_de.localeCompare(b.vale_de))[0]; return `${real(f.valor)} a partir de ${br(f.vale_de)}`; }
+  return partes.join(" · ") || "sem preço";
+}
+
+function mostrarProntas() {
+  const gs = prontasParaCobrar();
+  $("#rProntas").innerHTML = gs.length ? `<table><tr><th>Cliente</th><th>Período</th><th class="n">Carradas</th><th class="n">Toneladas</th><th class="n">Valor</th><th>Situação</th><th></th></tr>` +
+    gs.map(g => `<tr><td><b>${esc(g.cliente)}</b></td><td>${br(g.de)} a ${br(g.ate)}</td><td class="n">${g.n}${g.barro ? `<br><small>${g.barro} de barro</small>` : ""}</td><td class="n">${ton(g.kg)}</td><td class="n">${real(g.valor)}</td>
+      <td>${g.semPreco ? `<span style="color:var(--erro);font-weight:600">${g.semPreco} sem preço</span>` : g.fechado ? '<span style="color:var(--ok);font-weight:600">pronto para cobrar</span>' : '<span style="color:var(--suave)">período em andamento</span>'}</td>
+      <td><button class="mini" data-rpreparar="${g.cliente_id}|${g.de}|${g.ate}">Preparar</button></td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Nenhuma carrada esperando cobrança.</div>';
+}
+
+function sugerirPeriodo() {
+  const id = Number($("#rgCliente").value), c = cliCr(id); if (!c) return mostrarPreviaCobranca();
+  const prim = rz.aCobrar.filter(x => x.cliente_id === id).sort((a, b) => a.data.localeCompare(b.data))[0];
+  const per = periodoCliente(c, prim ? prim.data : hojeBR());
+  $("#rgDe").value = per.de; $("#rgAte").value = per.ate; $("#rgVenc").value = vencimentoCliente(c, per.ate);
+  mostrarPreviaCobranca();
+}
+function itensPrevia() {
+  const id = Number($("#rgCliente").value), de = $("#rgDe").value, ate = $("#rgAte").value;
+  return rz.aCobrar.filter(x => x.cliente_id === id && x.data >= de && x.data <= ate).sort((a, b) => a.data.localeCompare(b.data) || a.ticket - b.ticket);
+}
+function mostrarPreviaCobranca() {
+  const its = itensPrevia(), sem = its.filter(x => x.preco == null), c = cliCr(Number($("#rgCliente").value));
+  const total = its.reduce((t, x) => t + Number(x.valor || 0), 0), kgT = its.filter(x => x.cobra_por !== "carrada").reduce((t, x) => t + x.liquido_kg, 0), barro = its.filter(x => x.cobra_por === "carrada").length;
+  const credito = c ? rz.recebimentos.filter(r => r.cliente_id === c.id && r.situacao === "valida").reduce((t, r) => t + Number(r.credito || 0), 0) : 0;
+  $("#rgResumo").innerHTML = !c ? "" : its.length
+    ? `<b>${its.length} carrada(s)</b> · ${ton(kgT)} t${barro ? ` + ${barro} carrada(s) de barro` : ""} · <b style="font-size:18px;color:var(--azul)">${real(total)}</b>` +
+      (credito > 0.004 ? `<br><span style="color:var(--ok)">O cliente tem ${real(credito)} de crédito: abate esta cobrança sozinho.</span>` : "") +
+      (sem.length ? `<div class="msg erro">${sem.length} carrada(s) sem preço. Cadastre o preço em <a href="#" data-rir="precos">Preços e prazos</a> antes de gerar.</div>` : "")
+    : `<div class="vazio">Nenhuma carrada sem cobrança de ${esc(c.nome)} nesse período.</div>`;
+  $("#rgItens").innerHTML = its.length ? `<table><tr><th>Data</th><th>Ticket</th><th>Placa</th><th>Produto</th><th class="n">Quantidade</th><th class="n">Preço</th><th class="n">Valor</th></tr>` +
+    its.map(x => `<tr><td>${br(x.data)}</td><td>${x.ticket}</td><td>${esc(x.placa)}</td><td>${esc(x.produto || "—")}</td><td class="n">${qtdItem(x)}</td>
+      <td class="n">${x.preco == null ? '<span style="color:var(--erro)">sem preço</span>' : real(x.preco)}</td><td class="n">${x.valor == null ? "—" : real(x.valor)}</td></tr>`).join("") + "</table>" : "";
+  $("#btGerarCobranca").disabled = !its.length || sem.length > 0;
+}
+
+function mostrarCobrancas() {
+  const cli = $("#rcCliente").value, sit = $("#rcSit").value, hoje = hojeBR();
+  const l = rz.cobrancas.filter(c => (!cli || String(c.cliente_id) === cli)).map(c => ({ ...c, s: sitCobranca(c, hoje) }))
+    .filter(c => sit === "todas" ? c.situacao === "valida" : sit === "aberto" ? ["aberta", "vencida"].includes(c.s.chave) : c.s.chave === sit)
+    .sort((a, b) => b.periodo_ate.localeCompare(a.periodo_ate) || b.id - a.id);
+  $("#rCobrancas").innerHTML = l.length ? `<table><tr><th>Nº</th><th>Cliente</th><th>Período</th><th class="n">Carradas</th><th class="n">Toneladas</th><th class="n">Valor</th><th class="n">Recebido</th><th class="n">Saldo</th><th>Vencimento</th><th></th></tr>` +
+    l.map(c => `<tr><td><b>${esc(c.numero)}</b></td><td>${esc(c.cliente)}</td><td>${br(c.periodo_de)} a ${br(c.periodo_ate)}</td><td class="n">${c.carradas}</td><td class="n">${Number(c.toneladas).toLocaleString("pt-BR", { minimumFractionDigits: 3 })}</td>
+      <td class="n">${real(c.valor)}</td><td class="n">${real(c.recebido)}</td><td class="n"><b>${real(c.saldo)}</b></td>
+      <td>${br(c.vencimento)}<br><small style="color:${c.s.cor};font-weight:600">${c.s.txt}</small>${c.situacao === "cancelada" ? `<br><small>${esc(c.motivo_cancelamento)}</small>` : ""}${editadoTxt(c)}${c.observacao ? `<br><small style="color:var(--suave)">${esc(c.observacao)}</small>` : ""}</td>
+      <td style="white-space:nowrap"><button class="mini" data-rpdf="${c.id}">PDF</button>${c.situacao === "valida" ? ` ${Number(c.saldo) > 0.004 ? `<button class="mini" data-rreceber="${c.id}">Receber</button> ` : ""}<button class="mini" data-reditar-cob="${c.id}">Editar</button> <button class="mini" data-rcancelar-cob="${c.id}">Cancelar</button>` : ""}</td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Nenhuma cobrança nessa situação.</div>';
+}
+
+function opcoesCobrancaRec(sel) {
+  const id = Number($("#rrCliente").value);
+  const abertas = rz.cobrancas.filter(c => c.cliente_id === id && c.situacao === "valida" && Number(c.saldo) > 0.004).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+  $("#rrCobranca").innerHTML = `<option value="">As mais antigas em aberto</option>` + abertas.map(c => `<option value="${c.id}">${esc(c.numero)} · saldo ${real(c.saldo)} · vence ${br(c.vencimento)}</option>`).join("");
+  if (sel) $("#rrCobranca").value = String(sel);
+}
+function mostrarRecebimentos() {
+  const l = [...rz.recebimentos].sort((a, b) => b.recebido_em.localeCompare(a.recebido_em) || b.id - a.id);
+  $("#rRecebimentos").innerHTML = l.length ? `<table><tr><th>Data</th><th>Cliente</th><th>Forma</th><th class="n">Valor</th><th>Abateu</th><th class="n">Crédito</th><th></th></tr>` +
+    l.map(r => r.situacao === "cancelada"
+      ? `<tr style="color:var(--suave)"><td>${br(r.recebido_em)}</td><td>${esc(r.cliente)}</td><td>${esc(r.forma)}</td><td class="n"><s>${real(r.valor)}</s></td><td colspan="3">cancelado: ${esc(r.motivo_cancelamento)}</td></tr>`
+      : `<tr><td>${br(r.recebido_em)}</td><td>${esc(r.cliente)}</td><td>${esc(r.forma)}</td><td class="n"><b>${real(r.valor)}</b></td><td>${esc(r.cobrancas || "—")}${r.observacao ? `<br><small style="color:var(--suave)">${esc(r.observacao)}</small>` : ""}${editadoTxt(r)}</td>
+        <td class="n">${Number(r.credito) > 0.004 ? `<span style="color:var(--ok)">${real(r.credito)}</span>` : "—"}</td>
+        <td style="white-space:nowrap"><button class="mini" data-reditar-rec="${r.id}">Editar</button> <button class="mini" data-rcancelar-rec="${r.id}">Cancelar</button></td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Nenhum recebimento lançado ainda.</div>';
+}
+
+function mostrarPrecos() {
+  const id = Number($("#rpCliente").value), c = cliCr(id);
+  if (c) { $("#rpPeriodo").value = c.cobranca_periodo || "mensal"; $("#rpPrazo").value = c.prazo_dias ?? 0; }
+  const nomeProd = pid => rz.produtos.find(p => p.id === pid)?.nome || "—";
+  const cobraPor = pid => rz.produtos.find(p => p.id === pid)?.cobra_por || "tonelada";
+  const hist = rz.precosTodos.filter(p => p.cliente_id === id).sort((a, b) => b.vale_de.localeCompare(a.vale_de) || b.id - a.id);
+  $("#rpHist").innerHTML = hist.length ? `<table><tr><th>Vale a partir de</th><th>Produto</th><th class="n">Preço</th><th>Situação</th><th></th></tr>` +
+    hist.map(p => `<tr ${p.situacao === "cancelada" ? 'style="color:var(--suave)"' : ""}><td>${br(p.vale_de)}</td><td>${esc(nomeProd(p.produto_id))}</td><td class="n">${real(p.valor)} / ${cobraPor(p.produto_id) === "carrada" ? "carrada" : "t"}</td>
+      <td>${p.situacao === "cancelada" ? "cancelado: " + esc(p.motivo_cancelamento) : "válido"}</td><td>${p.situacao === "valida" ? `<button class="mini" data-rcancelar-preco="${p.id}">Cancelar</button>` : ""}</td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Este cliente ainda não tem preço.</div>';
+  const com = rz.clientes.filter(x => rz.precos.some(p => p.cliente_id === x.id));
+  $("#rpTodos").innerHTML = com.length ? `<table><tr><th>Cliente</th><th>Preço hoje</th><th>Cobrança</th><th class="n">Prazo</th><th></th></tr>` +
+    com.map(x => `<tr><td><b>${esc(x.nome)}</b></td><td>${precoAtualTxt(x.id)}</td><td>${NOME_PERIODO[x.cobranca_periodo] || "mensal"}</td><td class="n">${x.prazo_dias || 0} dia(s)</td><td><button class="mini" data-rver-preco="${x.id}">Ver</button></td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Nenhum cliente com preço ainda.</div>';
+}
+
+// PDF da cobrança para mandar ao cliente
+async function pdfCobranca(id) {
+  const c = rz.cobrancas.find(x => x.id === id); if (!c) return;
+  const [{ data: its, error }, ] = await Promise.all([db.from("cr_cobranca_itens").select("*").eq("cobranca_id", id).order("data").order("ticket")]);
+  if (error) return msg("#rMsg", "erro", erroCr(error));
+  const tickets = its.map(x => x.ticket), placas = {};
+  for (let i = 0; i < tickets.length; i += 300) {
+    const { data } = await db.from("pesagens").select("ticket,placa").in("ticket", tickets.slice(i, i + 300));
+    (data || []).forEach(p => placas[p.ticket] = p.placa);
+  }
+  const cli = cliCr(c.cliente_id) || {}, nomeProd = pid => rz.produtos.find(p => p.id === pid)?.nome || "—";
+  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
+  const azul = [31, 58, 95], W = 210, M = 12;
+  doc.addImage(LOGO, "PNG", M, 7, 42, 12);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(...azul); doc.text(EMPRESA, M + 46, 12);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(110); doc.text(ENDERECO, M + 46, 17);
+  doc.text("COBRANÇA", W - M, 25, { align: "right" });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(0); doc.text(c.numero, W - M, 29, { align: "right" });
+  doc.setDrawColor(...azul); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21);
+  doc.setFontSize(13); doc.text("Demonstrativo de carradas para pagamento", M, 29);
+  doc.setFontSize(10); doc.text(cli.nome || c.cliente, M, 37);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
+  doc.text([cli.cpf_cnpj ? `CPF/CNPJ: ${cli.cpf_cnpj}` : "", `Período: ${br(c.periodo_de)} a ${br(c.periodo_ate)}`].filter(Boolean).join("   ·   "), M, 42);
+  doc.setFont("helvetica", "bold"); doc.setTextColor(0); doc.setFontSize(11);
+  doc.text(`Valor: ${real(c.valor)}`, M, 50); doc.text(`Vencimento: ${br(c.vencimento)}`, W - M, 50, { align: "right" });
+  const rodape = () => { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(130);
+    doc.text(`${c.numero} · emitido em ${new Date().toLocaleString("pt-BR")}`, M, 289);
+    doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 289, { align: "right" }); };
+  const kgT = its.filter(x => x.cobra_por !== "carrada").reduce((t, x) => t + x.liquido_kg, 0);
+  doc.autoTable({ margin: { left: M, right: M, bottom: 14 }, startY: 55, styles: { fontSize: 8.5, cellPadding: 1.8 }, headStyles: { fillColor: azul, textColor: 255 },
+    footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" }, alternateRowStyles: { fillColor: [244, 245, 247] }, didDrawPage: rodape,
+    head: [["Data", "Ticket", "Placa", "Produto", "Quantidade", "Preço", "Valor"]],
+    body: its.map(x => [br(x.data), x.ticket, placas[x.ticket] || "", nomeProd(x.produto_id), qtdItem(x), real(x.preco) + (x.cobra_por === "carrada" ? "/carrada" : "/t"), real(x.valor)]),
+    foot: [["TOTAL", `${its.length} carradas`, "", "", ton(kgT) + " t", "", real(c.valor)]],
+    columnStyles: { 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" } } });
+  let y = doc.lastAutoTable.finalY + 8;
+  if (y > 270) { doc.addPage(); y = 20; }
+  doc.setFontSize(10); doc.setFont("helvetica", "normal");
+  if (Number(c.recebido) > 0) { doc.text(`Já recebido: ${real(c.recebido)}`, W - M, y, { align: "right" }); y += 6; }
+  doc.setFont("helvetica", "bold"); doc.text(`Saldo a pagar: ${real(c.saldo)} até ${br(c.vencimento)}`, W - M, y, { align: "right" });
+  if (c.observacao) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text(`Obs.: ${c.observacao}`, M, y + 8, { maxWidth: W - 2 * M }); }
+  doc.save(`${c.numero}-${normNome(c.cliente).replace(/[^a-z0-9]+/g, "-")}.pdf`);
+}
+
+// extrato do cliente: cobranças e recebimentos com o saldo
+function pdfExtratoCr(id) {
+  const cli = cliCr(id); if (!cli) return;
+  const movs = [
+    ...rz.cobrancas.filter(c => c.cliente_id === id && c.situacao === "valida").map(c => ({ data: c.periodo_ate, txt: `Cobrança ${c.numero} (${br(c.periodo_de)} a ${br(c.periodo_ate)}, vence ${br(c.vencimento)})`, deb: Number(c.valor), cred: 0 })),
+    ...rz.recebimentos.filter(r => r.cliente_id === id && r.situacao === "valida").map(r => ({ data: r.recebido_em, txt: `Recebimento ${r.forma}${r.observacao ? " · " + r.observacao : ""}`, deb: 0, cred: Number(r.valor) }))
+  ].sort((a, b) => a.data.localeCompare(b.data) || b.deb - a.deb);
+  if (!movs.length) return msg("#rMsg", "aviso", `${esc(cli.nome)} ainda não tem cobranças nem recebimentos.`);
+  let saldo = 0;
+  const body = movs.map(m => { saldo += m.deb - m.cred; return [br(m.data), m.txt, m.deb ? real(m.deb) : "", m.cred ? real(m.cred) : "", real(saldo)]; });
+  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
+  const azul = [31, 58, 95], W = 210, M = 12;
+  doc.addImage(LOGO, "PNG", M, 7, 42, 12);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(...azul); doc.text(EMPRESA, M + 46, 12);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(110); doc.text(ENDERECO, M + 46, 17);
+  doc.setDrawColor(...azul); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(0); doc.text(`Extrato do cliente: ${cli.nome}`, M, 29);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60); doc.text(`Posição em ${new Date().toLocaleDateString("pt-BR")}`, M, 35);
+  doc.autoTable({ margin: { left: M, right: M, bottom: 14 }, startY: 40, styles: { fontSize: 8.5, cellPadding: 1.8 }, headStyles: { fillColor: azul, textColor: 255 },
+    footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" }, alternateRowStyles: { fillColor: [244, 245, 247] },
+    head: [["Data", "Lançamento", "Cobrado", "Recebido", "Saldo"]], body,
+    foot: [["", saldo < -0.004 ? "CRÉDITO DO CLIENTE" : "SALDO A RECEBER", "", "", real(Math.abs(saldo))]],
+    columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } });
+  doc.save(`extrato-${normNome(cli.nome).replace(/[^a-z0-9]+/g, "-")}-${hojeBR()}.pdf`);
+}
+
+const irReceber = parte => document.querySelector(`#abas [data-aba="receber"][data-parte="${parte}"]`).click();
+$("#rgCliente").addEventListener("change", e => { e.target.dataset.tocado = 1; sugerirPeriodo(); });
+$("#rgDe").addEventListener("change", mostrarPreviaCobranca);
+$("#rgAte").addEventListener("change", () => { const c = cliCr(Number($("#rgCliente").value)); if (c && $("#rgAte").value) $("#rgVenc").value = vencimentoCliente(c, $("#rgAte").value); mostrarPreviaCobranca(); });
+$("#rcCliente").addEventListener("change", mostrarCobrancas);
+$("#rcSit").addEventListener("change", mostrarCobrancas);
+$("#rrCliente").addEventListener("change", () => opcoesCobrancaRec());
+$("#rpCliente").addEventListener("change", e => { e.target.dataset.tocado = 1; msg("#rpMsg", "", ""); mostrarPrecos(); });
+
+$("#btGerarCobranca").addEventListener("click", async () => {
+  const id = Number($("#rgCliente").value), c = cliCr(id), its = itensPrevia();
+  if (!$("#rgDe").value || !$("#rgAte").value || !$("#rgVenc").value) return msg("#rgMsg", "erro", "Informe o período e o vencimento.");
+  const total = its.reduce((t, x) => t + Number(x.valor || 0), 0);
+  if (!confirm(`Gerar a cobrança de ${c.nome}?\n\n${its.length} carrada(s) de ${br($("#rgDe").value)} a ${br($("#rgAte").value)}\nValor: ${real(total)}\nVencimento: ${br($("#rgVenc").value)}`)) return;
+  $("#btGerarCobranca").disabled = true;
+  const { data, error } = await db.rpc("gerar_cobranca", { p_cliente: id, p_de: $("#rgDe").value, p_ate: $("#rgAte").value, p_vencimento: $("#rgVenc").value, p_observacao: $("#rgObs").value });
+  if (error) { $("#btGerarCobranca").disabled = false; return msg("#rgMsg", "erro", "A cobrança não foi gerada. " + erroCr(error)); }
+  $("#rgObs").value = "";
+  await carregarReceber();
+  const nova = rz.cobrancas.find(x => x.id === data);
+  msg("#rgMsg", "ok", `Cobrança <b>${esc(nova?.numero || "")}</b> gerada: ${real(nova?.valor)}. <button class="mini" data-rpdf="${data}">Baixar PDF</button>`);
+});
+
+$("#btReceber").addEventListener("click", async () => {
+  const id = Number($("#rrCliente").value), valor = valorBR($("#rrValor").value), cob = $("#rrCobranca").value;
+  if (!id) return msg("#rrMsg", "erro", "Escolha o cliente.");
+  if (!$("#rrData").value) return msg("#rrMsg", "erro", "Informe a data.");
+  if (!(valor > 0)) return msg("#rrMsg", "erro", "Informe o valor recebido (ex.: 12.000,00).");
+  $("#btReceber").disabled = true;
+  const { error } = await db.rpc("lancar_recebimento", { p_cliente: id, p_data: $("#rrData").value, p_valor: valor, p_forma: $("#rrForma").value, p_cobranca: cob ? Number(cob) : null, p_observacao: $("#rrObs").value });
+  $("#btReceber").disabled = false;
+  if (error) return msg("#rrMsg", "erro", "O recebimento não foi salvo. " + erroCr(error));
+  $("#rrValor").value = ""; $("#rrObs").value = "";
+  await carregarReceber();
+  const r = rz.recebimentos.filter(x => x.cliente_id === id).sort((a, b) => b.id - a.id)[0];
+  msg("#rrMsg", "ok", `Recebimento de ${real(valor)} salvo.` + (r?.cobrancas ? ` Abateu: ${esc(r.cobrancas)}.` : "") + (Number(r?.credito) > 0.004 ? ` Ficou ${real(r.credito)} de crédito para a próxima cobrança.` : ""));
+});
+
+$("#btSalvarPrazo").addEventListener("click", async () => {
+  const id = Number($("#rpCliente").value), prazo = Number($("#rpPrazo").value || 0);
+  if (!(prazo >= 0 && prazo <= 365)) return msg("#rpMsg", "erro", "Prazo entre 0 e 365 dias.");
+  const { error } = await db.from("clientes").update({ cobranca_periodo: $("#rpPeriodo").value, prazo_dias: Math.round(prazo) }).eq("id", id);
+  if (error) return msg("#rpMsg", "erro", erroCr(error));
+  await carregarReceber(); msg("#rpMsg", "ok", "Forma de cobrança salva. Vale para as próximas cobranças.");
+});
+$("#btSalvarPreco").addEventListener("click", async () => {
+  const id = Number($("#rpCliente").value), t = valorBR($("#rpTon").value), b = valorBR($("#rpBarro").value), vale = $("#rpVale").value;
+  if (!vale) return msg("#rpMsg", "erro", "Informe a partir de quando o preço vale.");
+  if (t == null && b == null) return msg("#rpMsg", "erro", "Informe o preço por tonelada (ex.: 61,00).");
+  if ((t != null && !(t > 0)) || (b != null && !(b > 0))) return msg("#rpMsg", "erro", "Confira o valor do preço.");
+  const linhas = rz.produtos.filter(p => p.ativo && ((p.cobra_por === "carrada" && b != null) || (p.cobra_por !== "carrada" && t != null)))
+    .map(p => ({ cliente_id: id, produto_id: p.id, valor: p.cobra_por === "carrada" ? b : t, vale_de: vale, criado_por: usuario.id }));
+  const { error } = await db.from("cr_precos").insert(linhas);
+  if (error) return msg("#rpMsg", "erro", /duplicate|unique/i.test(error.message) ? "Já existe preço com essa data para este cliente. Cancele o antigo na lista abaixo e salve de novo." : erroCr(error));
+  $("#rpTon").value = ""; $("#rpBarro").value = "";
+  await carregarReceber(); msg("#rpMsg", "ok", `Preço salvo, vale a partir de ${br(vale)}.`);
+});
+
+document.addEventListener("click", async e => {
+  const d = e.target.closest("[data-rir],[data-rpreparar],[data-rpdf],[data-rextrato],[data-rreceber],[data-rreceber-cli],[data-reditar-cob],[data-rcancelar-cob],[data-reditar-rec],[data-rcancelar-rec],[data-rcancelar-preco],[data-rver-preco]");
+  if (!d || !rz) return;
+  const ds = d.dataset;
+  if (ds.rir) { e.preventDefault(); return irReceber(ds.rir); }
+  if (ds.rpreparar) {
+    const [cli, de, ate] = ds.rpreparar.split("|");
+    irReceber("cobrar"); $("#rgCliente").value = cli; $("#rgCliente").dataset.tocado = 1;
+    $("#rgDe").value = de; $("#rgAte").value = ate; $("#rgVenc").value = vencimentoCliente(cliCr(Number(cli)), ate);
+    mostrarPreviaCobranca(); return $("#rGerarCard").scrollIntoView({ behavior: "smooth" });
+  }
+  if (ds.rpdf) return pdfCobranca(Number(ds.rpdf));
+  if (ds.rextrato) return pdfExtratoCr(Number(ds.rextrato));
+  if (ds.rreceber || ds.rreceberCli) {
+    const c = ds.rreceber ? rz.cobrancas.find(x => x.id === Number(ds.rreceber)) : null;
+    irReceber("recebimentos"); $("#rrCliente").value = c ? c.cliente_id : ds.rreceberCli; opcoesCobrancaRec(c?.id);
+    if (c) $("#rrValor").value = real2(c.saldo);
+    return $("#rrValor").focus();
+  }
+  if (ds.rverPreco) { $("#rpCliente").value = ds.rverPreco; $("#rpCliente").dataset.tocado = 1; mostrarPrecos(); return $("#rpCliente").scrollIntoView({ behavior: "smooth" }); }
+  if (ds.reditarCob) {
+    const c = rz.cobrancas.find(x => x.id === Number(ds.reditarCob));
+    return janelaEditar(`Editar cobrança ${esc(c.numero)}`, [
+      { nome: "venc", rotulo: "Vencimento", tipo: "date", valor: c.vencimento },
+      { nome: "obs", rotulo: "Observação", valor: c.observacao }], async v => {
+      if (!v.venc) return "Informe o vencimento.";
+      const { error } = await db.rpc("editar_cobranca", { p_id: c.id, p_vencimento: v.venc, p_observacao: v.obs, p_motivo: v.motivo });
+      return error ? erroCr(error) : null;
+    }, carregarReceber);
+  }
+  if (ds.rcancelarCob) {
+    const c = rz.cobrancas.find(x => x.id === Number(ds.rcancelarCob));
+    const motivo = prompt(`Cancelar a cobrança ${c.numero} de ${c.cliente} (${real(c.valor)})?\nAs carradas voltam para "sem cobrança" e o que já foi pago vira crédito do cliente.\n\nMotivo:`);
+    if (!motivo?.trim()) return;
+    const { error } = await db.rpc("cancelar_cobranca", { p_id: c.id, p_motivo: motivo });
+    if (error) return msg("#rMsg", "erro", erroCr(error));
+    await carregarReceber(); return msg("#rMsg", "ok", `Cobrança ${esc(c.numero)} cancelada. Ela continua guardada no sistema.`);
+  }
+  if (ds.reditarRec) {
+    const r = rz.recebimentos.find(x => x.id === Number(ds.reditarRec));
+    const abertas = rz.cobrancas.filter(c => c.cliente_id === r.cliente_id && c.situacao === "valida" && (Number(c.saldo) > 0.004 || c.id === r.cobranca_id));
+    return janelaEditar(`Editar recebimento de ${esc(r.cliente)}`, [
+      { nome: "data", rotulo: "Data", tipo: "date", valor: r.recebido_em },
+      { nome: "valor", rotulo: "Valor (R$)", valor: real2(r.valor) },
+      { nome: "forma", rotulo: "Forma", valor: r.forma, opcoes: FORMAS_REC.map(f => [f, f]) },
+      { nome: "cob", rotulo: "Abater em", valor: r.cobranca_id ?? "", opcoes: [["", "As mais antigas em aberto"], ...abertas.map(c => [c.id, c.numero])] },
+      { nome: "obs", rotulo: "Observação", valor: r.observacao }], async v => {
+      const valor = valorBR(v.valor);
+      if (!v.data) return "Informe a data.";
+      if (!(valor > 0)) return "Informe o valor.";
+      const { error } = await db.rpc("editar_recebimento", { p_id: r.id, p_data: v.data, p_valor: valor, p_forma: v.forma, p_cobranca: v.cob ? Number(v.cob) : null, p_observacao: v.obs, p_motivo: v.motivo });
+      return error ? erroCr(error) : null;
+    }, carregarReceber);
+  }
+  if (ds.rcancelarRec) {
+    const r = rz.recebimentos.find(x => x.id === Number(ds.rcancelarRec));
+    const motivo = prompt(`Cancelar o recebimento de ${real(r.valor)} de ${r.cliente} (${br(r.recebido_em)})?\nO valor volta a ficar em aberto nas cobranças.\n\nMotivo:`);
+    if (!motivo?.trim()) return;
+    const { error } = await db.rpc("cancelar_recebimento", { p_id: r.id, p_motivo: motivo });
+    if (error) return msg("#rrMsg", "erro", erroCr(error));
+    await carregarReceber(); return msg("#rrMsg", "ok", "Recebimento cancelado. Ele continua guardado no sistema.");
+  }
+  if (ds.rcancelarPreco) {
+    const motivo = prompt("Cancelar este preço? As carradas que já estão em cobrança não mudam.\n\nMotivo:");
+    if (!motivo?.trim()) return;
+    const { error } = await db.rpc("cancelar_preco", { p_id: Number(ds.rcancelarPreco), p_motivo: motivo });
+    if (error) return msg("#rpMsg", "erro", erroCr(error));
+    await carregarReceber(); return msg("#rpMsg", "ok", "Preço cancelado.");
+  }
 });
 </script>
 </body>
