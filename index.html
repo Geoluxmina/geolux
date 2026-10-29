@@ -725,6 +725,7 @@
           <label>Até <input type="date" id="rgAte"></label>
           <label>Vencimento <input type="date" id="rgVenc"></label>
           <label style="flex:1 1 200px">Observação <input id="rgObs" placeholder="opcional"></label>
+          <label>Banco no PDF <select id="rgConta"></select></label>
         </div>
         <div id="rgResumo" style="margin:12px 0"></div>
         <div class="tabela" id="rgItens"></div>
@@ -763,6 +764,7 @@
           <label>Cliente <select id="rpCliente"></select></label>
           <label>Cobrança <select id="rpPeriodo"><option value="semanal">Semanal (segunda a domingo)</option><option value="quinzenal">Quinzenal (1 a 15 e 16 ao fim do mês)</option><option value="mensal">Mensal</option></select></label>
           <label>Prazo para pagar (dias depois do período) <input type="number" id="rpPrazo" min="0" max="365" step="1"></label>
+          <label>Banco no PDF <select id="rpConta"></select></label>
           <button class="bt sec" id="btSalvarPrazo">Salvar forma de cobrança</button>
         </div>
         <div class="linha" style="margin-top:8px"><button class="bt sec" id="btCrNovoCliente">+ Novo cliente</button><button class="bt sec" id="btCrNovoProduto">+ Novo produto</button></div>
@@ -780,6 +782,13 @@
       <div class="card" data-parte="precos">
         <h3 style="margin-top:0">Todos os clientes</h3>
         <div class="tabela" id="rpTodos"></div>
+      </div>
+      <div class="card" data-parte="precos">
+        <h3 style="margin-top:0">Contas bancárias da Geolux (saem no PDF)</h3>
+        <p style="margin:0 0 8px;color:var(--suave)">O banco escolhido sai em "Dados para pagamento" na cobrança e no extrato. Cada cliente pode ter um banco padrão (acima, em Banco no PDF).</p>
+        <div class="tabela" id="rpContas"></div>
+        <div class="linha" style="margin-top:8px"><button class="bt sec" id="btNovaConta">+ Nova conta</button></div>
+        <div id="rpcMsg"></div>
       </div>
     </section>
     <!-- CONTAS A PAGAR (só administrador) -->
@@ -2116,7 +2125,7 @@ async function salvarBackup(arquivos) {
 $("#btBackup").addEventListener("click", async () => {
   msg("#backupMsg", "aviso", "Gerando backup…");
   try {
-    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "almox_categorias", "almox_itens", "almox_movimentos", "manut_plano_pecas", "pesagens_conferidas", "cr_precos", "cr_cobrancas", "cr_cobranca_itens", "cr_recebimentos", "cr_baixas", "cr_config", "cp_pagamentos", "auditoria"];
+    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "almox_categorias", "almox_itens", "almox_movimentos", "manut_plano_pecas", "pesagens_conferidas", "cr_precos", "cr_cobrancas", "cr_cobranca_itens", "cr_recebimentos", "cr_baixas", "cr_config", "cp_pagamentos", "cr_contas_bancarias", "auditoria"];
     const dados = {};
     for (const t of tabelas) {
       dados[t] = [];
@@ -3786,6 +3795,8 @@ async function carregarReceber() {
       cobrancas: cb, recebimentos: rc, aCobrar: ac, diesel: [] };
     await carregarModoTeste();
     try { rz.diesel = await todasLinhas("v_cp_diesel", "carga_id"); } catch { rz.diesel = []; }   // sem a query 025 ainda
+    const ct = await db.from("cr_contas_bancarias").select("*").order("id");   // sem a query 027: fica sem banco
+    rz.contas = ct.error ? [] : ct.data;
   } catch (e) { return msg("#rMsg", "erro", "Não foi possível carregar o contas a receber. " + erroCr(e)); }
   const opCli = (todos, comPreco) => (todos ? `<option value="">${todos}</option>` : "") +
     rz.clientes.filter(c => c.ativo || !comPreco).map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join("");
@@ -3880,6 +3891,7 @@ function sugerirPeriodo() {
   const prim = rz.aCobrar.filter(x => x.cliente_id === id).sort((a, b) => a.data.localeCompare(b.data))[0];
   const per = periodoCliente(c, prim ? prim.data : hojeBR());
   $("#rgDe").value = per.de; $("#rgAte").value = per.ate; $("#rgVenc").value = vencimentoCliente(c, per.ate);
+  $("#rgConta").innerHTML = opcoesConta(contaPadrao(c));
   mostrarPreviaCobranca();
 }
 function itensPrevia() {
@@ -3934,6 +3946,7 @@ function mostrarRecebimentos() {
 function mostrarPrecos() {
   const id = Number($("#rpCliente").value), c = cliCr(id);
   if (c) { $("#rpPeriodo").value = c.cobranca_periodo || "mensal"; $("#rpPrazo").value = c.prazo_dias ?? 0; }
+  $("#rpConta").innerHTML = opcoesConta(c?.conta_bancaria_id); mostrarContas();
   const nomeProd = pid => rz.produtos.find(p => p.id === pid)?.nome || "—";
   const cobraPor = pid => rz.produtos.find(p => p.id === pid)?.cobra_por || "tonelada";
   const hoje = hojeBR();
@@ -4021,12 +4034,56 @@ async function pdfCobranca(id) {
   doc.setDrawColor(180); doc.setLineWidth(0.2); doc.line(W - M - 70, y - 4, W - M, y - 4);
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text("Saldo a pagar", M + 2, y); doc.text(`${real(c.saldo)} até ${br(c.vencimento)}`, W - M, y, { align: "right" });
   if (c.observacao) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60); doc.text(`Obs.: ${c.observacao}`, M, y + 8, { maxWidth: W - 2 * M }); }
+  blocoPagamento(doc, contaPorId(c.conta_bancaria_id), y + (c.observacao ? 14 : 8), W, M);
   if (c.teste) marcaTeste(doc);
   doc.save(`${c.numero}-${normNome(c.cliente).replace(/[^a-z0-9]+/g, "-")}.pdf`);
 }
 
+
+// ------------------------------------------------------------------ contas bancárias (saem no PDF)
+const contaPorId = id => (rz?.contas || []).find(c => c.id === Number(id));
+const contaPadrao = cli => contaPorId(cli?.conta_bancaria_id)?.ativa ? cli.conta_bancaria_id : "";
+const opcoesConta = sel => '<option value="">— sem banco no PDF —</option>' + (rz?.contas || []).filter(c => c.ativa || c.id === Number(sel))
+  .map(c => `<option value="${c.id}" ${c.id === Number(sel) ? "selected" : ""}>${esc(c.banco)}${c.agencia || c.conta || c.pix ? "" : " (falta preencher)"}</option>`).join("");
+const contaLinhas = c => [`Banco: ${c.banco}${c.agencia ? "   ·   Agência: " + c.agencia : ""}${c.conta ? "   ·   Conta: " + c.conta : ""}`,
+  c.pix ? `PIX: ${c.pix}` : "", c.titular ? `Favorecido: ${c.titular}${c.documento ? " · " + c.documento : ""}` : ""].filter(Boolean);
+function blocoPagamento(doc, conta, y, W, M) {
+  if (!conta) return y;
+  const ls = contaLinhas(conta), h = 9 + ls.length * 5;
+  if (y + h > 282) { doc.addPage(); y = 20; }
+  doc.setDrawColor(31, 58, 95); doc.setLineWidth(0.3); doc.rect(M, y, W - 2 * M, h);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(31, 58, 95); doc.text("Dados para pagamento", M + 3, y + 5.5);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(0);
+  ls.forEach((t, i) => doc.text(t, M + 3, y + 11 + i * 5));
+  return y + h + 4;
+}
+function mostrarContas() {
+  $("#rpContas").innerHTML = (rz.contas || []).length ? `<table><tr><th>Banco</th><th>Agência</th><th>Conta</th><th>PIX</th><th>Favorecido</th><th>Situação</th><th></th></tr>` +
+    rz.contas.map(c => `<tr ${c.ativa ? "" : 'style="color:var(--suave)"'}><td><b>${esc(c.banco)}</b></td><td>${esc(c.agencia || "—")}</td><td>${esc(c.conta || "—")}</td><td>${esc(c.pix || "—")}</td><td>${esc(c.titular || "")}${c.documento ? "<br><small>" + esc(c.documento) + "</small>" : ""}</td>
+      <td>${c.ativa ? (c.agencia || c.conta || c.pix ? "ativa" : '<span style="color:var(--aviso)">falta preencher</span>') : "desativada"}</td><td><button class="mini" data-reditar-conta="${c.id}">Editar</button></td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Falta rodar a query 027 no Supabase para cadastrar os bancos.</div>';
+}
+function janelaConta(c) {
+  janelaEditar(c ? `Editar conta ${esc(c.banco)}` : "Nova conta bancária", [
+    { nome: "banco", rotulo: "Banco", valor: c?.banco || "" },
+    { nome: "agencia", rotulo: "Agência", valor: c?.agencia || "" },
+    { nome: "conta", rotulo: "Conta (com dígito)", valor: c?.conta || "" },
+    { nome: "pix", rotulo: "Chave PIX", valor: c?.pix || "" },
+    { nome: "titular", rotulo: "Favorecido", valor: c?.titular || EMPRESA },
+    { nome: "documento", rotulo: "CNPJ do favorecido", valor: c?.documento || "" },
+    { nome: "ativa", rotulo: "Situação", valor: c && !c.ativa ? "0" : "1", opcoes: [["1", "Ativa"], ["0", "Desativada (não aparece mais para escolher)"]] }], async v => {
+    if (!v.banco?.trim()) return "Informe o banco.";
+    const dados = { banco: v.banco.trim(), agencia: v.agencia?.trim() || null, conta: v.conta?.trim() || null, pix: v.pix?.trim() || null,
+      titular: v.titular?.trim() || null, documento: v.documento?.trim() || null, ativa: v.ativa === "1" };
+    const { error } = c ? await db.from("cr_contas_bancarias").update(dados).eq("id", c.id) : await db.from("cr_contas_bancarias").insert(dados);
+    if (error) return erroCr(error);
+    msg("#rpcMsg", "ok", "Conta salva. Ela já pode ser escolhida para sair no PDF.");
+  }, async () => { await carregarReceber(); mostrarPrecos(); }, true);
+}
+$("#btNovaConta").addEventListener("click", () => janelaConta(null));
+
 // extrato do cliente no período: 1) carradas, 2) diesel fornecido pelo cliente, 3) pagamentos, 4) resumo
-async function pdfExtratoCr(id, de, ate) {
+async function pdfExtratoCr(id, de, ate, contaId) {
   const cli = cliCr(id); if (!cli) return "Cliente não encontrado.";
   const nomeProd = pid => rz.produtos.find(p => p.id === pid)?.nome || "—";
   const cobs = rz.cobrancas.filter(c => c.cliente_id === id && c.situacao === "valida");
@@ -4132,6 +4189,7 @@ async function pdfExtratoCr(id, de, ate) {
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
     doc.text(`Cobranças em aberto: ${abertas.map(c => `${c.numero} saldo ${real(c.saldo)}, vence ${br(c.vencimento)}`).join("; ")}.`, M + 2, y, { maxWidth: W - 2 * M - 4 });
   }
+  blocoPagamento(doc, contaPorId(contaId), y + (abertas.length ? 10 : 4), W, M);
   if (cobs.some(c => c.teste && its.some(x => x.cobranca_id === c.id)) || its.some(x => x.cob === "a cobrar") && modoTeste) marcaTeste(doc);
   doc.save(`extrato-${normNome(cli.nome).replace(/[^a-z0-9]+/g, "-")}-${de}-a-${ate}.pdf`);
 }
@@ -4140,10 +4198,11 @@ function pedirExtratoCr(id) {
   const hoje = hojeBR();
   janelaEditar(`Extrato de ${esc(cli.nome)}`, [
     { nome: "de", rotulo: "De", tipo: "date", valor: hoje.slice(0, 8) + "01" },
-    { nome: "ate", rotulo: "Até", tipo: "date", valor: hoje }], async v => {
+    { nome: "ate", rotulo: "Até", tipo: "date", valor: hoje },
+    ...((rz.contas || []).length ? [{ nome: "conta", rotulo: "Banco no PDF", valor: contaPadrao(cli), opcoes: [["", "— sem banco no PDF —"], ...rz.contas.filter(x => x.ativa).map(x => [x.id, x.banco])] }] : [])], async v => {
     if (!v.de || !v.ate) return "Informe o período.";
     if (v.de > v.ate) return "A data De é depois da data Até.";
-    return await pdfExtratoCr(id, v.de, v.ate);
+    return await pdfExtratoCr(id, v.de, v.ate, v.conta);
   }, () => {}, true);
 }
 
@@ -4165,6 +4224,7 @@ $("#btGerarCobranca").addEventListener("click", async () => {
   const { data, error } = await db.rpc("gerar_cobranca", { p_cliente: id, p_de: $("#rgDe").value, p_ate: $("#rgAte").value, p_vencimento: $("#rgVenc").value, p_observacao: $("#rgObs").value });
   if (error) { $("#btGerarCobranca").disabled = false; return msg("#rgMsg", "erro", "A cobrança não foi gerada. " + erroCr(error)); }
   $("#rgObs").value = "";
+  if ($("#rgConta").value) { const r = await db.rpc("cr_definir_conta", { p_cobranca: data, p_conta: Number($("#rgConta").value) }); if (r.error) console.log("banco", r.error); }
   await carregarReceber();
   const nova = rz.cobrancas.find(x => x.id === data);
   const dz2 = dieselAberto(id), totDz = dz2.reduce((t, x) => t + Number(x.saldo), 0);
@@ -4190,7 +4250,7 @@ $("#btReceber").addEventListener("click", async () => {
 $("#btSalvarPrazo").addEventListener("click", async () => {
   const id = Number($("#rpCliente").value), prazo = Number($("#rpPrazo").value || 0);
   if (!(prazo >= 0 && prazo <= 365)) return msg("#rpMsg", "erro", "Prazo entre 0 e 365 dias.");
-  const { error } = await db.from("clientes").update({ cobranca_periodo: $("#rpPeriodo").value, prazo_dias: Math.round(prazo) }).eq("id", id);
+  const { error } = await db.from("clientes").update({ cobranca_periodo: $("#rpPeriodo").value, prazo_dias: Math.round(prazo), ...(rz.contas?.length ? { conta_bancaria_id: $("#rpConta").value ? Number($("#rpConta").value) : null } : {}) }).eq("id", id);
   if (error) return msg("#rpMsg", "erro", erroCr(error));
   await carregarReceber(); msg("#rpMsg", "ok", "Forma de cobrança salva. Vale para as próximas cobranças.");
 });
@@ -4231,7 +4291,7 @@ $("#btCrNovoProduto").addEventListener("click", () => janelaEditar("Novo produto
 }, carregarReceber, true));
 
 document.addEventListener("click", async e => {
-  const d = e.target.closest("[data-rir],[data-rpreparar],[data-rpdf],[data-rextrato],[data-rreceber],[data-rreceber-cli],[data-reditar-cob],[data-rcancelar-cob],[data-reditar-rec],[data-rcancelar-rec],[data-rcancelar-preco],[data-rver-preco],[data-rabater-cob]");
+  const d = e.target.closest("[data-rir],[data-rpreparar],[data-rpdf],[data-rextrato],[data-rreceber],[data-rreceber-cli],[data-reditar-cob],[data-rcancelar-cob],[data-reditar-rec],[data-rcancelar-rec],[data-rcancelar-preco],[data-rver-preco],[data-rabater-cob],[data-reditar-conta]");
   if (!d || !rz) return;
   const ds = d.dataset;
   if (ds.rir) { e.preventDefault(); return irReceber(ds.rir); }
@@ -4254,6 +4314,7 @@ document.addEventListener("click", async e => {
     const m = `Diesel abatido: ${real(tot)}. Saldo da cobrança ${esc(c.numero)}: ${real(n?.saldo)}. <button class="mini" data-rpdf="${c.id}">Baixar PDF</button>`;
     msg("#rMsg", "ok", m); if (!$("#rgMsg").classList.contains("escondido")) msg("#rgMsg", "ok", m); return;
   }
+  if (ds.reditarConta) return janelaConta(contaPorId(ds.reditarConta));
   if (ds.rextrato) return pedirExtratoCr(Number(ds.rextrato));
   if (ds.rreceber || ds.rreceberCli) {
     const c = ds.rreceber ? rz.cobrancas.find(x => x.id === Number(ds.rreceber)) : null;
@@ -4266,10 +4327,13 @@ document.addEventListener("click", async e => {
     const c = rz.cobrancas.find(x => x.id === Number(ds.reditarCob));
     return janelaEditar(`Editar cobrança ${esc(c.numero)}`, [
       { nome: "venc", rotulo: "Vencimento", tipo: "date", valor: c.vencimento },
-      { nome: "obs", rotulo: "Observação", valor: c.observacao }], async v => {
+      { nome: "obs", rotulo: "Observação", valor: c.observacao },
+      ...(rz.contas?.length ? [{ nome: "conta", rotulo: "Banco no PDF", valor: c.conta_bancaria_id ?? "", opcoes: [["", "— sem banco no PDF —"], ...rz.contas.filter(x => x.ativa || x.id === c.conta_bancaria_id).map(x => [x.id, x.banco])] }] : [])], async v => {
       if (!v.venc) return "Informe o vencimento.";
       const { error } = await db.rpc("editar_cobranca", { p_id: c.id, p_vencimento: v.venc, p_observacao: v.obs, p_motivo: v.motivo });
-      return error ? erroCr(error) : null;
+      if (error) return erroCr(error);
+      if (v.conta !== undefined && String(v.conta) !== String(c.conta_bancaria_id ?? "")) { const r = await db.rpc("cr_definir_conta", { p_cobranca: c.id, p_conta: v.conta ? Number(v.conta) : null }); if (r.error) return erroCr(r.error); }
+      return null;
     }, carregarReceber);
   }
   if (ds.rcancelarCob) {
