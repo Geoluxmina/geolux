@@ -39,8 +39,13 @@
   header .quem { margin-left:auto; font-size:13px; opacity:.9; }
   #app:not(.escondido) { display:flex; align-items:flex-start; }
   nav { width:210px; flex:none; position:sticky; top:0; max-height:100vh; overflow-y:auto; box-sizing:border-box; padding:12px 10px; border-right:1px solid var(--borda); background:var(--cinza); min-height:calc(100vh - 58px); }
-  nav .grupo { margin-bottom:16px; }
-  nav h4 { margin:4px 8px 6px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--azul); }
+  nav .grupo { margin-bottom:6px; }
+  nav h4 { margin:0; padding:9px 10px; border-radius:6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--azul); cursor:pointer; user-select:none; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  nav h4:hover { background:var(--azul2); }
+  nav h4::after { content:"▾"; font-size:13px; }
+  nav .grupo.fechado h4::after { content:"▸"; }
+  nav .grupo.fechado > button { display:none; }
+  nav .grupo:not(.fechado) > button { padding-left:18px; }
   nav button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 10px; border-radius:6px; cursor:pointer; font-size:14px; color:var(--texto); }
   nav button:hover { background:var(--azul2); }
   nav button.ativo { background:var(--azul); color:#fff; font-weight:600; }
@@ -49,7 +54,7 @@
     #app:not(.escondido) { flex-direction:column; align-items:stretch; }
     nav { width:auto; position:static; min-height:0; max-height:none; border-right:none; border-bottom:1px solid var(--borda); padding:8px; }
     nav .grupo { margin:0 0 6px; display:flex; flex-wrap:wrap; gap:4px; }
-    nav h4 { width:100%; margin:2px 4px; }
+    nav h4 { width:100%; padding:8px 6px; }
     nav button { white-space:nowrap; width:auto; padding:7px 10px; border:1px solid var(--borda); background:#fff; }
   }
   .card { border:1px solid var(--borda); border-radius:10px; padding:16px; margin-bottom:16px; }
@@ -982,8 +987,20 @@ $("#sair").addEventListener("click", async () => {
   await db.auth.signOut({ scope: "local" }); location.reload();
 });
 
+// menu lateral: cada módulo abre e fecha; só o módulo aberto mostra as suas abas
+const abrirGrupo = g => document.querySelectorAll("#abas .grupo").forEach(x => x.classList.toggle("fechado", x !== g));
+document.querySelectorAll("#abas .grupo").forEach(g => {
+  g.classList.toggle("fechado", !g.querySelector("button.ativo"));
+  g.querySelector("h4").addEventListener("click", () => {
+    if (!g.classList.contains("fechado")) { g.classList.add("fechado"); return; }
+    abrirGrupo(g);
+    const bts = [...g.querySelectorAll("button")].filter(b => !b.classList.contains("escondido"));
+    if (bts.length === 1 || !bts.some(b => b.classList.contains("ativo"))) bts[0]?.click();
+  });
+});
 document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("#abas button").forEach(x => x.classList.toggle("ativo", x === b));
+  abrirGrupo(b.closest(".grupo"));
   document.querySelectorAll("main > section").forEach(s => s.classList.toggle("escondido", s.id !== "aba-" + b.dataset.aba));
   if (b.dataset.parte) document.querySelectorAll(`#aba-${b.dataset.aba} [data-parte]`).forEach(c => c.classList.toggle("escondido", !c.dataset.parte.split(" ").includes(b.dataset.parte)));
   if (b.dataset.aba === "cadastros") carregarCadastros();
