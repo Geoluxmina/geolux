@@ -1088,8 +1088,8 @@ $("#btRemover").addEventListener("click", limparAnexo);
 function tabelaPesagens(ps, arq = null) {
   const mot = p => p.motorista || arq == null ? esc(p.motorista || "—")
     : `<input data-mot="${arq}|${p.ticket}" list="motoristasLista" placeholder="digitar motorista" style="width:150px;padding:4px 6px">`;
-  return `<div class="tabela"><table><tr><th>Tiquete</th><th>Placa</th><th>Produto</th><th>Cliente</th><th>Motorista</th><th>Nº Nota</th><th>Entrada</th><th class="n">Tara (kg)</th><th>Saída</th><th class="n">Bruto (kg)</th><th class="n">Líquido (kg)</th><th>Observação</th></tr>` +
-    ps.map(p => `<tr><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto_balanca)}</td><td>${esc(p.cliente_balanca)}</td><td>${mot(p)}</td><td>${esc(p.nota || "—")}</td><td>${brHora(p.entrada_em)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td class="n"><b>${liqTxt(p)}</b></td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") +
+  return `<div class="tabela"><table><tr><th>Tiquete</th><th>Placa</th><th>Produto</th><th>Cliente</th><th>Motorista</th><th>Entrada</th><th class="n">Tara (kg)</th><th>Saída</th><th class="n">Bruto (kg)</th><th class="n">Líquido (kg)</th><th>Observação</th></tr>` +
+    ps.map(p => `<tr><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto_balanca)}</td><td>${esc(p.cliente_balanca)}</td><td>${mot(p)}</td><td>${brHora(p.entrada_em)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td class="n"><b>${liqTxt(p)}</b></td><td class="alerta">${esc(alertas(p))}</td></tr>`).join("") +
     `</table></div>`;
 }
 
@@ -1339,23 +1339,25 @@ async function mostrarRelatorio() {
 }
 
 function tabelaDetalhada(ps) {
-  let h = `<table><tr><th>Tiquete</th><th>Placa</th><th>Produto</th><th>Cliente</th><th>Transportador</th><th>Motorista</th><th>Nº Nota</th><th>Op. entrada</th><th class="n">Peso entrada (kg)</th><th>Entrada</th><th>Op. saída</th><th class="n">Peso saída (kg)</th><th>Saída</th><th class="n">Líquido (kg)</th><th>Observação</th>${papel === "admin" ? "<th></th>" : ""}</tr>`;
+  let h = `<table><tr><th>Tiquete</th><th>Placa</th><th>Produto</th><th>Cliente</th><th>Motorista</th><th class="n">Peso entrada (kg)</th><th>Entrada</th><th class="n">Peso saída (kg)</th><th>Saída</th><th class="n">Líquido (kg)</th><th>Observação</th>${papel === "admin" ? "<th></th>" : ""}</tr>`;
   const dias = [...new Set(ps.map(p => p.data))];
-  const cols = papel === "admin" ? 16 : 15;
+  // sem transportador e operadores (a pesagem é sempre da Geolux) e sem Nº Nota (volta quando o sistema registrar notas);
+  // tudo continua gravado no banco e no backup
+  const cols = papel === "admin" ? 12 : 11;
   for (const d of dias) {
     const pd = ps.filter(p => p.data === d);
     for (const c of [...new Set(pd.map(p => p.cliente))].sort()) {
       const pc = pd.filter(p => p.cliente === c);
       for (const p of pc) {
         const obs = p.situacao === "cancelada" ? `cancelada: ${p.motivo_cancelamento}` : alertas(p);
-        h += `<tr class="${p.situacao === "cancelada" ? "cancelada" : ""}"><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto || p.produto_balanca)}</td><td>${esc(p.cliente)}</td><td>${esc(p.transportador || "—")}</td><td>${esc(p.motorista || "—")}</td><td>${esc(p.nota || "—")}</td><td>${esc(p.operador_entrada)}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.entrada_em)}</td><td>${esc(p.operador_saida)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n"><b>${liqTxt(p)}</b></td><td class="alerta">${esc(obs)}</td>` +
+        h += `<tr class="${p.situacao === "cancelada" ? "cancelada" : ""}"><td>${p.ticket}</td><td>${esc(p.placa)}</td><td>${esc(p.produto || p.produto_balanca)}</td><td>${esc(p.cliente)}</td><td>${esc(p.motorista || "—")}</td><td class="n">${kg(p.peso_entrada_kg)}</td><td>${brHora(p.entrada_em)}</td><td class="n">${kg(p.peso_saida_kg)}</td><td>${brHora(p.saida_em)}</td><td class="n"><b>${liqTxt(p)}</b></td><td class="alerta">${esc(obs)}</td>` +
              (papel === "admin" ? `<td>${p.situacao === "valida" ? `<button class="mini" data-cancelar="${p.ticket}">Cancelar</button>` : ""}</td>` : "") + `</tr>`;
       }
       const v = pc.filter(p => p.situacao === "valida");
-      h += `<tr class="sub"><td>${v.length} carradas</td><td colspan="12">Subtotal ${esc(c)} · ${br(d)}</td><td class="n">${kg(v.reduce((s, p) => s + p.liquido_kg, 0))}</td><td colspan="${cols - 14}"></td></tr>`;
+      h += `<tr class="sub"><td>${v.length} carradas</td><td colspan="8">Subtotal ${esc(c)} · ${br(d)}</td><td class="n">${kg(v.reduce((s, p) => s + p.liquido_kg, 0))}</td><td colspan="${cols - 10}"></td></tr>`;
     }
     const v = pd.filter(p => p.situacao === "valida");
-    h += `<tr class="dia"><td>${v.length} carradas</td><td colspan="12">TOTAL DO DIA ${br(d)}</td><td class="n">${kg(v.reduce((s, p) => s + p.liquido_kg, 0))}</td><td colspan="${cols - 14}"></td></tr>`;
+    h += `<tr class="dia"><td>${v.length} carradas</td><td colspan="8">TOTAL DO DIA ${br(d)}</td><td class="n">${kg(v.reduce((s, p) => s + p.liquido_kg, 0))}</td><td colspan="${cols - 10}"></td></tr>`;
   }
   return h + "</table>";
 }
@@ -1431,21 +1433,21 @@ $("#btExcel").addEventListener("click", async () => {
     ws.getColumn(v.cols.length + 2).numFmt = "#,##0.000"; ws.getColumn(v.cols.length + 3).numFmt = "0.0%";
   }
   // detalhado, igual à balança
-  const cab = ["Tiquete", "Placa", "Produto", "Cliente ou Fornecedor", "Transportador", "Motorista", "Nº Nota", "Operador de Entrada", "Peso de Entrada (kg)", "Data/Hora de Entrada", "Operador da Saída", "Peso de Saída (kg)", "Data/Hora de Saída", "Peso Líquido (kg)", "Situação", "Observação", "Arquivo da balança", "Código de verificação (SHA-256)"];
-  const ws = aba("Detalhado por dia", cab, [], [10, 10, 20, 26, 14, 14, 10, 12, 12, 17, 12, 12, 17, 12, 11, 40, 22, 30]);
+  const cab = ["Tiquete", "Placa", "Produto", "Cliente ou Fornecedor", "Motorista", "Peso de Entrada (kg)", "Data/Hora de Entrada", "Peso de Saída (kg)", "Data/Hora de Saída", "Peso Líquido (kg)", "Situação", "Observação", "Arquivo da balança", "Código de verificação (SHA-256)"];
+  const ws = aba("Detalhado por dia", cab, [], [10, 10, 20, 26, 14, 12, 17, 12, 17, 12, 11, 40, 22, 30]);
   for (const d of [...new Set(atual.map(p => p.data))]) {
     const pd = atual.filter(p => p.data === d);
     for (const c of [...new Set(pd.map(p => p.cliente))].sort()) {
       const pc = pd.filter(p => p.cliente === c);
-      for (const p of pc) ws.addRow([p.ticket, p.placa, p.produto || p.produto_balanca, p.cliente, p.transportador, p.motorista, p.nota, p.operador_entrada, p.peso_entrada_kg, brHora(p.entrada_em), p.operador_saida, p.peso_saida_kg, brHora(p.saida_em), p.por_carrada ? "por carrada" : p.liquido_kg, p.situacao, p.situacao === "cancelada" ? p.motivo_cancelamento : alertas(p), p.arquivo_nome, p.sha256]);
+      for (const p of pc) ws.addRow([p.ticket, p.placa, p.produto || p.produto_balanca, p.cliente, p.motorista, p.peso_entrada_kg, brHora(p.entrada_em), p.peso_saida_kg, brHora(p.saida_em), p.por_carrada ? "por carrada" : p.liquido_kg, p.situacao, p.situacao === "cancelada" ? p.motivo_cancelamento : alertas(p), p.arquivo_nome, p.sha256]);
       const v = pc.filter(p => p.situacao === "valida");
-      ws.addRow([`${v.length} carradas`, "", "", `Subtotal ${c} · ${br(d)}`, "", "", "", "", "", "", "", "", "", v.reduce((s, p) => s + p.liquido_kg, 0)]).eachCell(x => { x.fill = azul2; x.font = { bold: true }; });
+      ws.addRow([`${v.length} carradas`, "", "", `Subtotal ${c} · ${br(d)}`, "", "", "", "", "", v.reduce((s, p) => s + p.liquido_kg, 0)]).eachCell(x => { x.fill = azul2; x.font = { bold: true }; });
     }
     const v = pd.filter(p => p.situacao === "valida");
-    ws.addRow([`${v.length} carradas`, "", "", `TOTAL DO DIA ${br(d)}`, "", "", "", "", "", "", "", "", "", v.reduce((s, p) => s + p.liquido_kg, 0)]).eachCell(x => { x.fill = azul; x.font = { bold: true, color: { argb: "FFFFFFFF" } }; });
+    ws.addRow([`${v.length} carradas`, "", "", `TOTAL DO DIA ${br(d)}`, "", "", "", "", "", v.reduce((s, p) => s + p.liquido_kg, 0)]).eachCell(x => { x.fill = azul; x.font = { bold: true, color: { argb: "FFFFFFFF" } }; });
     ws.addRow([]);
   }
-  for (const col of [9, 12, 14]) ws.getColumn(col).numFmt = "#,##0";
+  for (const col of [6, 8, 10]) ws.getColumn(col).numFmt = "#,##0";
   const conf = validas.filter(alertas);
   if (papel === "admin") {
   const wc = aba("A conferir", ["Data", "Tiquete", "Cliente", "Placa", "Motorista", "Entrada", "Saída", "Peso Líquido (kg)", "O que conferir"],
@@ -1512,13 +1514,13 @@ function paginaComprovante(doc, ps, cad, periodo) {
   if (ps.some(p => p.por_carrada) && !ps.every(p => p.por_carrada)) { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(80); doc.text(barroTxt(ps).replace(" + ", "mais ") + " (por carrada)", M + larg * 0.74 + 2.5, 50); }
   doc.autoTable({
     startY: 55, margin: { left: M, right: M, bottom: 14 },
-    head: [["#", "Tiquete", "Placa", "Motorista", "Produto", "Nº Nota", "Entrada", "Saída", "Tara (kg)", "Bruto (kg)", "Líquido (kg)"]],
-    body: ps.map((p, i) => [i + 1, p.ticket, p.placa, p.motorista || "não informado", p.produto || p.produto_balanca, p.nota || "—", brHora(p.entrada_em), brHora(p.saida_em), p.por_carrada ? "—" : kg(p.peso_entrada_kg), p.por_carrada ? "—" : kg(p.peso_saida_kg), liqTxt(p)]),
-    foot: [["", "TOTAL", `${ps.length} carradas`, "", "", "", "", "", kg(ps.filter(p => !p.por_carrada).reduce((s, p) => s + p.peso_entrada_kg, 0)), kg(ps.filter(p => !p.por_carrada).reduce((s, p) => s + p.peso_saida_kg, 0)), kg(total)]],
+    head: [["#", "Tiquete", "Placa", "Motorista", "Produto", "Entrada", "Saída", "Tara (kg)", "Bruto (kg)", "Líquido (kg)"]],   // Nº Nota volta quando o sistema registrar notas
+    body: ps.map((p, i) => [i + 1, p.ticket, p.placa, p.motorista || "não informado", p.produto || p.produto_balanca, brHora(p.entrada_em), brHora(p.saida_em), p.por_carrada ? "—" : kg(p.peso_entrada_kg), p.por_carrada ? "—" : kg(p.peso_saida_kg), liqTxt(p)]),
+    foot: [["", "TOTAL", `${ps.length} carradas`, "", "", "", "", kg(ps.filter(p => !p.por_carrada).reduce((s, p) => s + p.peso_entrada_kg, 0)), kg(ps.filter(p => !p.por_carrada).reduce((s, p) => s + p.peso_saida_kg, 0)), kg(total)]],
     styles: { fontSize: 7.5, cellPadding: 1.6 }, headStyles: { fillColor: azul, textColor: 255 },
     footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" },
     alternateRowStyles: { fillColor: [244, 245, 247] },
-    columnStyles: { 8: { halign: "right" }, 9: { halign: "right" }, 10: { halign: "right", fontStyle: "bold" } },
+    columnStyles: { 7: { halign: "right" }, 8: { halign: "right" }, 9: { halign: "right", fontStyle: "bold" } },
     didDrawPage: d => { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(130);
       doc.text(`${numero} · emitido em ${new Date().toLocaleString("pt-BR")}`, M, 205);
       doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 205, { align: "right" }); },
