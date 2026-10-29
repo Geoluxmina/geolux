@@ -30,11 +30,12 @@
   #aba-almox .linha > label { min-width:0; max-width:100%; }
   #aba-almox td input { min-width:0; width:90px; }
   #aKpis .kpi { flex:1 1 140px; }
-  #rKpis .kpi { flex:1 1 140px; }
+  #rKpis .kpi, #pKpis .kpi { flex:1 1 140px; }
+  .tag-teste { display:inline-block; font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:var(--avisofundo); color:var(--aviso); border:1px solid var(--aviso); }
   .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:9px; background:var(--azul2); color:var(--azul); font-weight:normal; }
   @media (max-width:640px) { #aba-almox .linha > label { flex:1 1 100%; } #aba-almox .linha > label > input:not([type=checkbox]), #aba-almox .linha > label > select { width:100%; min-width:0 !important; font-size:16px; }
     #aba-almox .painel-grade { grid-template-columns:1fr !important; } }
-  @media (max-width:640px) { #aba-receber .linha > label { flex:1 1 100%; } #aba-receber .linha > label > input, #aba-receber .linha > label > select { width:100%; min-width:0 !important; font-size:16px; box-sizing:border-box; } }
+  @media (max-width:640px) { #aba-receber .linha > label, #aba-pagar .linha > label { flex:1 1 100%; } #aba-receber .linha > label > input, #aba-receber .linha > label > select, #aba-pagar .linha > label > select { width:100%; min-width:0 !important; font-size:16px; box-sizing:border-box; } }
   .pergunta { position:sticky; bottom:0; z-index:5; background:#fff; margin-bottom:0; border:2px solid var(--azul); box-shadow:0 -4px 12px rgba(0,0,0,.12); }
   header .logo { height:38px; background:#fff; border-radius:6px; padding:4px 8px; }
   #login .logo { display:block; height:56px; margin:0 auto 12px; }
@@ -174,6 +175,12 @@
       <button data-aba="receber" data-parte="cobrancas">Cobranças</button>
       <button data-aba="receber" data-parte="recebimentos">Recebimentos</button>
       <button data-aba="receber" data-parte="precos">Preços e prazos</button>
+    </div>
+    <div class="grupo" data-grupo="pagar" data-admin>
+      <h4>Contas a pagar</h4>
+      <button data-aba="pagar" data-parte="diesel">Diesel a pagar</button>
+      <button data-aba="pagar" data-parte="pagamentos">Pagamentos</button>
+      <button data-aba="pagar" data-parte="fornecedores">Fornecedores</button>
     </div>
     <div class="grupo" data-grupo="sistema" data-admin>
       <h4>Sistema</h4>
@@ -696,6 +703,7 @@
     </section>
     <!-- CONTAS A RECEBER (só administrador) -->
     <section id="aba-receber" class="escondido">
+      <div class="cr-teste"></div>
       <div id="rMsg"></div>
       <div class="kpis" id="rKpis" data-parte="resumo"></div>
       <div class="card" data-parte="resumo" id="rAtencaoCard"><h3 style="margin-top:0">Atenção</h3><div id="rAtencao"></div></div>
@@ -757,19 +765,46 @@
           <label>Prazo para pagar (dias depois do período) <input type="number" id="rpPrazo" min="0" max="365" step="1"></label>
           <button class="bt sec" id="btSalvarPrazo">Salvar forma de cobrança</button>
         </div>
-        <div class="linha" style="margin-top:16px">
-          <label>Preço por tonelada (R$) <input id="rpTon" inputmode="decimal" placeholder="0,00"></label>
-          <label>Preço da carrada de barro (R$) <input id="rpBarro" inputmode="decimal" placeholder="só se comprar barro"></label>
+        <div class="linha" style="margin-top:8px"><button class="bt sec" id="btCrNovoCliente">+ Novo cliente</button><button class="bt sec" id="btCrNovoProduto">+ Novo produto</button></div>
+        <h4 style="margin:18px 0 6px">Preço por produto</h4>
+        <div class="linha">
+          <label>Mesmo preço para todos os produtos por tonelada (R$) <input id="rpTon" inputmode="decimal" placeholder="0,00"></label>
           <label>Vale a partir de <input type="date" id="rpVale"></label>
-          <button class="bt" id="btSalvarPreco">Salvar preço</button>
         </div>
-        <p style="color:var(--suave);font-size:13px;margin:8px 0">Preço novo vale para as carradas a partir da data escolhida; as anteriores continuam com o preço antigo. O preço por tonelada vale para todos os produtos pesados (calcário e rejeito).</p>
+        <div class="tabela" id="rpProdutos" style="margin-top:10px"></div>
+        <div class="linha" style="margin-top:10px"><button class="bt" id="btSalvarPreco">Salvar preços</button></div>
+        <p style="color:var(--suave);font-size:13px;margin:8px 0">Preencha só o que muda. Preço novo vale para as carradas a partir da data escolhida; as anteriores continuam com o preço antigo. Produto em branco continua com o preço que já tem.</p>
         <div id="rpMsg"></div>
         <div class="tabela" id="rpHist"></div>
       </div>
       <div class="card" data-parte="precos">
         <h3 style="margin-top:0">Todos os clientes</h3>
         <div class="tabela" id="rpTodos"></div>
+      </div>
+    </section>
+    <!-- CONTAS A PAGAR (só administrador) -->
+    <section id="aba-pagar" class="escondido">
+      <div class="cr-teste"></div>
+      <div id="cpMsg"></div>
+      <div class="kpis" id="cpKpis" data-parte="diesel"></div>
+      <div class="card linha" data-parte="diesel">
+        <label>Situação <select id="cpSit"><option value="aberto">Em aberto</option><option value="vencida">Vencidas</option><option value="paga">Pagas</option><option value="semvalor">Sem valor lançado</option><option value="todas">Todas</option></select></label>
+        <label>Fornecedor <select id="cpForn"></select></label>
+      </div>
+      <div class="card" data-parte="diesel">
+        <h3 style="margin-top:0">Diesel a pagar (cargas desde 26/10/2026)</h3>
+        <p style="margin-top:0;color:var(--suave);font-size:13px">Cada carga de diesel com valor lançado é uma conta a pagar. <b>Abater do cliente</b> desconta do que o cliente deve (ex.: 2R MINERAÇÃO); <b>Pagar</b> é quando paga em dinheiro, PIX ou boleto.</p>
+        <div class="tabela" id="cpCargas"></div>
+      </div>
+      <div class="card" data-parte="pagamentos">
+        <h3 style="margin-top:0">Pagamentos e abatimentos do diesel</h3>
+        <div class="tabela" id="cpPagamentos"></div>
+      </div>
+      <div class="card" data-parte="fornecedores">
+        <h3 style="margin-top:0">Fornecedores de diesel</h3>
+        <p style="margin-top:0;color:var(--suave);font-size:13px">Ligue o fornecedor ao cliente quando o diesel for abatido do que ele deve. Prazo = dias depois da retirada para pagar.</p>
+        <div class="tabela" id="cpFornecedores"></div>
+        <div id="cpfMsg"></div>
       </div>
     </section>
     <section id="aba-fechamento" class="escondido">
@@ -1100,6 +1135,7 @@ document.querySelectorAll("#abas button").forEach(b => b.addEventListener("click
   if (b.dataset.aba === "manutencao") carregarManut();
   if (b.dataset.aba === "almox") carregarAlmox();
   if (b.dataset.aba === "receber") carregarReceber();
+  if (b.dataset.aba === "pagar") carregarPagar();
 }));
 
 // ------------------------------------------------------------------ anexar relatório
@@ -2080,7 +2116,7 @@ async function salvarBackup(arquivos) {
 $("#btBackup").addEventListener("click", async () => {
   msg("#backupMsg", "aviso", "Gerando backup…");
   try {
-    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "almox_categorias", "almox_itens", "almox_movimentos", "manut_plano_pecas", "pesagens_conferidas", "cr_precos", "cr_cobrancas", "cr_cobranca_itens", "cr_recebimentos", "cr_baixas", "auditoria"];
+    const tabelas = ["perfis", "produtos", "produto_apelidos", "clientes", "importacoes", "importacao_cancelamentos", "pesagens", "fechamentos", "comprovante_envios", "placas", "conferencias", "conferencias_vistas", "maquinas", "diesel_cargas", "diesel_abastecimentos", "diesel_fornecedores", "manut_plano", "manut_servicos", "almox_categorias", "almox_itens", "almox_movimentos", "manut_plano_pecas", "pesagens_conferidas", "cr_precos", "cr_cobrancas", "cr_cobranca_itens", "cr_recebimentos", "cr_baixas", "cr_config", "cp_pagamentos", "auditoria"];
     const dados = {};
     for (const t of tabelas) {
       dados[t] = [];
@@ -2358,7 +2394,7 @@ function mostrarCargas() {
 const editadoTxt = x => x.editado_em ? `<br><small style="color:var(--suave)" title="${esc(x.motivo_edicao || "")}">editado em ${dataHora(x.editado_em)}${x.motivo_edicao ? ": " + esc(x.motivo_edicao) : ""}</small>` : "";
 const paraLocal = t => { const d = new Date(t); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 // janela com os campos; salvar(valores) devolve uma mensagem de erro ou nada
-function janelaEditar(titulo, campos, salvar, depois = carregarDiesel) {
+function janelaEditar(titulo, campos, salvar, depois = carregarDiesel, semMotivo = false) {
   const caixa = document.createElement("div");
   caixa.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000;overflow:auto";
   caixa.innerHTML = `<div class="card" style="background:#fff;max-width:520px;width:100%;margin:auto;box-shadow:0 10px 30px rgba(0,0,0,.3)">
@@ -2366,14 +2402,14 @@ function janelaEditar(titulo, campos, salvar, depois = carregarDiesel) {
     campos.map(c => `<label style="flex:1 1 200px">${c.rotulo}${c.opcoes
       ? `<select data-campo="${c.nome}">${c.opcoes.map(([v, t]) => `<option value="${esc(String(v))}" ${String(v) === String(c.valor) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`
       : `<input data-campo="${c.nome}" type="${c.tipo || "text"}" ${c.tipo === "number" ? 'step="0.1" min="0" inputmode="decimal"' : ""} value="${esc(c.valor == null ? "" : String(c.valor))}">`}</label>`).join("") +
-    `<label style="flex:1 1 100%">Motivo da edição (obrigatório) <input data-campo="motivo" placeholder="ex.: lançado na carga errada"></label></div>
+    (semMotivo ? "" : `<label style="flex:1 1 100%">Motivo da edição (obrigatório) <input data-campo="motivo" placeholder="ex.: lançado na carga errada"></label>`) + `</div>
     <div class="msg erro escondido" data-erro></div>
-    <div class="linha" style="margin-top:8px"><button class="bt" data-salvar>Salvar edição</button><button class="bt sec" data-fechar>Desistir</button></div></div>`;
+    <div class="linha" style="margin-top:8px"><button class="bt" data-salvar>${semMotivo ? "Salvar" : "Salvar edição"}</button><button class="bt sec" data-fechar>Desistir</button></div></div>`;
   document.body.appendChild(caixa);
   caixa.querySelector("[data-fechar]").onclick = () => caixa.remove();
   caixa.querySelector("[data-salvar]").onclick = async () => {
     const v = {}; caixa.querySelectorAll("[data-campo]").forEach(el => v[el.dataset.campo] = el.value.trim());
-    const erro = !v.motivo ? "Informe o motivo da edição." : await salvar(v);
+    const erro = !semMotivo && !v.motivo ? "Informe o motivo da edição." : await salvar(v);
     const box = caixa.querySelector("[data-erro]");
     if (erro) { box.textContent = erro; box.classList.remove("escondido"); return; }
     caixa.remove(); depois();
@@ -3728,7 +3764,9 @@ async function carregarReceber() {
       todasLinhas("cr_precos", "vale_de"), todasLinhas("v_cr_cobrancas", "id"), todasLinhas("v_cr_recebimentos", "id"), todasLinhas("v_cr_a_cobrar", "ticket")]);
     if (cl.error) throw cl.error; if (pr.error) throw pr.error;
     rz = { clientes: cl.data.filter(c => !c.unir_em), produtos: pr.data, precos: pc.filter(p => p.situacao === "valida"), precosTodos: pc,
-      cobrancas: cb, recebimentos: rc, aCobrar: ac };
+      cobrancas: cb, recebimentos: rc, aCobrar: ac, diesel: [] };
+    await carregarModoTeste();
+    try { rz.diesel = await todasLinhas("v_cp_diesel", "carga_id"); } catch { rz.diesel = []; }   // sem a query 025 ainda
   } catch (e) { return msg("#rMsg", "erro", "Não foi possível carregar o contas a receber. " + erroCr(e)); }
   const opCli = (todos, comPreco) => (todos ? `<option value="">${todos}</option>` : "") +
     rz.clientes.filter(c => c.ativo || !comPreco).map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join("");
@@ -3850,10 +3888,10 @@ function mostrarCobrancas() {
     .filter(c => sit === "todas" ? c.situacao === "valida" : sit === "aberto" ? ["aberta", "vencida"].includes(c.s.chave) : c.s.chave === sit)
     .sort((a, b) => b.periodo_ate.localeCompare(a.periodo_ate) || b.id - a.id);
   $("#rCobrancas").innerHTML = l.length ? `<table><tr><th>Nº</th><th>Cliente</th><th>Período</th><th class="n">Carradas</th><th class="n">Toneladas</th><th class="n">Valor</th><th class="n">Recebido</th><th class="n">Saldo</th><th>Vencimento</th><th></th></tr>` +
-    l.map(c => `<tr><td><b>${esc(c.numero)}</b></td><td>${esc(c.cliente)}</td><td>${br(c.periodo_de)} a ${br(c.periodo_ate)}</td><td class="n">${c.carradas}</td><td class="n">${Number(c.toneladas).toLocaleString("pt-BR", { minimumFractionDigits: 3 })}</td>
+    l.map(c => `<tr><td><b>${esc(c.numero)}</b>${c.teste ? ' <span class="tag-teste">TESTE</span>' : ""}</td><td>${esc(c.cliente)}</td><td>${br(c.periodo_de)} a ${br(c.periodo_ate)}</td><td class="n">${c.carradas}</td><td class="n">${Number(c.toneladas).toLocaleString("pt-BR", { minimumFractionDigits: 3 })}</td>
       <td class="n">${real(c.valor)}</td><td class="n">${real(c.recebido)}</td><td class="n"><b>${real(c.saldo)}</b></td>
       <td>${br(c.vencimento)}<br><small style="color:${c.s.cor};font-weight:600">${c.s.txt}</small>${c.situacao === "cancelada" ? `<br><small>${esc(c.motivo_cancelamento)}</small>` : ""}${editadoTxt(c)}${c.observacao ? `<br><small style="color:var(--suave)">${esc(c.observacao)}</small>` : ""}</td>
-      <td style="white-space:nowrap"><button class="mini" data-rpdf="${c.id}">PDF</button>${c.situacao === "valida" ? ` ${Number(c.saldo) > 0.004 ? `<button class="mini" data-rreceber="${c.id}">Receber</button> ` : ""}<button class="mini" data-reditar-cob="${c.id}">Editar</button> <button class="mini" data-rcancelar-cob="${c.id}">Cancelar</button>` : ""}</td></tr>`).join("") + "</table>"
+      <td style="white-space:nowrap"><button class="mini" data-rpdf="${c.id}">PDF</button>${c.situacao === "valida" ? ` ${Number(c.saldo) > 0.004 ? `<button class="mini" data-rreceber="${c.id}">Receber</button> ` : ""}${dieselAberto(c.cliente_id).length ? `<button class="mini" data-rabater-cob="${c.id}">Abater diesel</button> ` : ""}<button class="mini" data-reditar-cob="${c.id}">Editar</button> <button class="mini" data-rcancelar-cob="${c.id}">Cancelar</button>` : ""}</td></tr>`).join("") + "</table>"
     : '<div class="vazio">Nenhuma cobrança nessa situação.</div>';
 }
 
@@ -3868,9 +3906,9 @@ function mostrarRecebimentos() {
   $("#rRecebimentos").innerHTML = l.length ? `<table><tr><th>Data</th><th>Cliente</th><th>Forma</th><th class="n">Valor</th><th>Abateu</th><th class="n">Crédito</th><th></th></tr>` +
     l.map(r => r.situacao === "cancelada"
       ? `<tr style="color:var(--suave)"><td>${br(r.recebido_em)}</td><td>${esc(r.cliente)}</td><td>${esc(r.forma)}</td><td class="n"><s>${real(r.valor)}</s></td><td colspan="3">cancelado: ${esc(r.motivo_cancelamento)}</td></tr>`
-      : `<tr><td>${br(r.recebido_em)}</td><td>${esc(r.cliente)}</td><td>${esc(r.forma)}</td><td class="n"><b>${real(r.valor)}</b></td><td>${esc(r.cobrancas || "—")}${r.observacao ? `<br><small style="color:var(--suave)">${esc(r.observacao)}</small>` : ""}${editadoTxt(r)}</td>
+      : `<tr><td>${br(r.recebido_em)}${r.teste ? ' <span class="tag-teste">TESTE</span>' : ""}</td><td>${esc(r.cliente)}</td><td>${esc(r.forma)}</td><td class="n"><b>${real(r.valor)}</b></td><td>${esc(r.cobrancas || "—")}${r.observacao ? `<br><small style="color:var(--suave)">${esc(r.observacao)}</small>` : ""}${editadoTxt(r)}</td>
         <td class="n">${Number(r.credito) > 0.004 ? `<span style="color:var(--ok)">${real(r.credito)}</span>` : "—"}</td>
-        <td style="white-space:nowrap"><button class="mini" data-reditar-rec="${r.id}">Editar</button> <button class="mini" data-rcancelar-rec="${r.id}">Cancelar</button></td></tr>`).join("") + "</table>"
+        <td style="white-space:nowrap">${r.forma === "Abatimento diesel" ? "" : `<button class="mini" data-reditar-rec="${r.id}">Editar</button> `}<button class="mini" data-rcancelar-rec="${r.id}">Cancelar</button></td></tr>`).join("") + "</table>"
     : '<div class="vazio">Nenhum recebimento lançado ainda.</div>';
 }
 
@@ -3879,10 +3917,17 @@ function mostrarPrecos() {
   if (c) { $("#rpPeriodo").value = c.cobranca_periodo || "mensal"; $("#rpPrazo").value = c.prazo_dias ?? 0; }
   const nomeProd = pid => rz.produtos.find(p => p.id === pid)?.nome || "—";
   const cobraPor = pid => rz.produtos.find(p => p.id === pid)?.cobra_por || "tonelada";
+  const hoje = hojeBR();
+  const atual = pid => rz.precos.filter(p => p.cliente_id === id && p.produto_id === pid && p.vale_de <= hoje).sort((a, b) => a.vale_de.localeCompare(b.vale_de)).pop();
+  const ativos = rz.produtos.filter(p => p.ativo);
+  $("#rpProdutos").innerHTML = `<table><tr><th>Produto</th><th>Cobra por</th><th class="n">Preço hoje</th><th>Preço novo (R$)</th><th></th></tr>` +
+    ativos.map(p => { const a = atual(p.id); return `<tr><td><b>${esc(p.nome)}</b></td><td>${p.cobra_por === "carrada" ? "carrada" : "tonelada"}</td>
+      <td class="n">${a ? real(a.valor) + `<br><small style="color:var(--suave)">desde ${br(a.vale_de)}</small>` : '<span style="color:var(--suave)">sem preço</span>'}</td>
+      <td><input data-rpnovo="${p.id}" data-cobra="${p.cobra_por || "tonelada"}" inputmode="decimal" placeholder="${p.cobra_por === "carrada" ? "por carrada" : "por tonelada"}" style="min-width:120px"></td><td><button class="mini" data-reditar-prod="${p.id}">Editar</button></td></tr>`; }).join("") + "</table>";
   const hist = rz.precosTodos.filter(p => p.cliente_id === id).sort((a, b) => b.vale_de.localeCompare(a.vale_de) || b.id - a.id);
   $("#rpHist").innerHTML = hist.length ? `<table><tr><th>Vale a partir de</th><th>Produto</th><th class="n">Preço</th><th>Situação</th><th></th></tr>` +
     hist.map(p => `<tr ${p.situacao === "cancelada" ? 'style="color:var(--suave)"' : ""}><td>${br(p.vale_de)}</td><td>${esc(nomeProd(p.produto_id))}</td><td class="n">${real(p.valor)} / ${cobraPor(p.produto_id) === "carrada" ? "carrada" : "t"}</td>
-      <td>${p.situacao === "cancelada" ? "cancelado: " + esc(p.motivo_cancelamento) : "válido"}</td><td>${p.situacao === "valida" ? `<button class="mini" data-rcancelar-preco="${p.id}">Cancelar</button>` : ""}</td></tr>`).join("") + "</table>"
+      <td>${p.situacao === "cancelada" ? "cancelado: " + esc(p.motivo_cancelamento) : "válido"}</td><td>${p.situacao === "valida" ? `<span style="white-space:nowrap"><button class="mini" data-reditar-preco="${p.id}">Editar</button> <button class="mini" data-rcancelar-preco="${p.id}">Cancelar</button></span>` : ""}</td></tr>`).join("") + "</table>"
     : '<div class="vazio">Este cliente ainda não tem preço.</div>';
   const com = rz.clientes.filter(x => rz.precos.some(p => p.cliente_id === x.id));
   $("#rpTodos").innerHTML = com.length ? `<table><tr><th>Cliente</th><th>Preço hoje</th><th>Cobrança</th><th class="n">Prazo</th><th></th></tr>` +
@@ -3928,9 +3973,15 @@ async function pdfCobranca(id) {
   let y = doc.lastAutoTable.finalY + 8;
   if (y > 270) { doc.addPage(); y = 20; }
   doc.setFontSize(10); doc.setFont("helvetica", "normal");
-  if (Number(c.recebido) > 0) { doc.text(`Já recebido: ${real(c.recebido)}`, W - M, y, { align: "right" }); y += 6; }
+  const { data: bx } = await db.from("cr_baixas").select("*").eq("cobranca_id", id).eq("ativo", true);
+  const recs = (bx || []).map(b => ({ ...b, r: rz.recebimentos.find(r => r.id === b.recebimento_id) }));
+  const dz = recs.filter(b => b.r?.forma === "Abatimento diesel"), outros = recs.filter(b => b.r?.forma !== "Abatimento diesel");
+  for (const b of dz) { doc.text(`(-) Abatimento diesel ${b.r.observacao ? "(" + b.r.observacao.replace(/^Diesel: /, "") + ")" : ""}: ${real(b.valor)}`, W - M, y, { align: "right", maxWidth: W - 2 * M }); y += 6; }
+  const somaOut = outros.reduce((t, b) => t + Number(b.valor), 0);
+  if (somaOut > 0) { doc.text(`(-) Já recebido: ${real(somaOut)}`, W - M, y, { align: "right" }); y += 6; }
   doc.setFont("helvetica", "bold"); doc.text(`Saldo a pagar: ${real(c.saldo)} até ${br(c.vencimento)}`, W - M, y, { align: "right" });
   if (c.observacao) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text(`Obs.: ${c.observacao}`, M, y + 8, { maxWidth: W - 2 * M }); }
+  if (c.teste) marcaTeste(doc);
   doc.save(`${c.numero}-${normNome(c.cliente).replace(/[^a-z0-9]+/g, "-")}.pdf`);
 }
 
@@ -3980,7 +4031,9 @@ $("#btGerarCobranca").addEventListener("click", async () => {
   $("#rgObs").value = "";
   await carregarReceber();
   const nova = rz.cobrancas.find(x => x.id === data);
-  msg("#rgMsg", "ok", `Cobrança <b>${esc(nova?.numero || "")}</b> gerada: ${real(nova?.valor)}. <button class="mini" data-rpdf="${data}">Baixar PDF</button>`);
+  const dz2 = dieselAberto(id), totDz = dz2.reduce((t, x) => t + Number(x.saldo), 0);
+  msg("#rgMsg", "ok", `Cobrança <b>${esc(nova?.numero || "")}</b> gerada: ${real(nova?.valor)}. <button class="mini" data-rpdf="${data}">Baixar PDF</button>` +
+    (dz2.length ? `<br>${esc(c.nome)} tem <b>${dz2.length} carga(s) de diesel em aberto: ${real(totDz)}</b>. <button class="mini" data-rabater-cob="${data}">Abater desta cobrança</button>` : ""));
 });
 
 $("#btReceber").addEventListener("click", async () => {
@@ -4005,21 +4058,44 @@ $("#btSalvarPrazo").addEventListener("click", async () => {
   if (error) return msg("#rpMsg", "erro", erroCr(error));
   await carregarReceber(); msg("#rpMsg", "ok", "Forma de cobrança salva. Vale para as próximas cobranças.");
 });
+// "mesmo preço para todos por tonelada" preenche os produtos por tonelada
+$("#rpTon").addEventListener("input", () => document.querySelectorAll('#rpProdutos [data-rpnovo][data-cobra="tonelada"]').forEach(i => i.value = $("#rpTon").value));
 $("#btSalvarPreco").addEventListener("click", async () => {
-  const id = Number($("#rpCliente").value), t = valorBR($("#rpTon").value), b = valorBR($("#rpBarro").value), vale = $("#rpVale").value;
+  const id = Number($("#rpCliente").value), vale = $("#rpVale").value;
   if (!vale) return msg("#rpMsg", "erro", "Informe a partir de quando o preço vale.");
-  if (t == null && b == null) return msg("#rpMsg", "erro", "Informe o preço por tonelada (ex.: 61,00).");
-  if ((t != null && !(t > 0)) || (b != null && !(b > 0))) return msg("#rpMsg", "erro", "Confira o valor do preço.");
-  const linhas = rz.produtos.filter(p => p.ativo && ((p.cobra_por === "carrada" && b != null) || (p.cobra_por !== "carrada" && t != null)))
-    .map(p => ({ cliente_id: id, produto_id: p.id, valor: p.cobra_por === "carrada" ? b : t, vale_de: vale, criado_por: usuario.id }));
+  const linhas = [...document.querySelectorAll("#rpProdutos [data-rpnovo]")].filter(i => i.value.trim())
+    .map(i => ({ cliente_id: id, produto_id: Number(i.dataset.rpnovo), valor: valorBR(i.value), vale_de: vale, criado_por: usuario.id }));
+  if (!linhas.length) return msg("#rpMsg", "erro", "Digite o preço novo de pelo menos um produto (ex.: 61,00).");
+  if (linhas.some(l => !(l.valor > 0))) return msg("#rpMsg", "erro", "Confira o valor do preço.");
   const { error } = await db.from("cr_precos").insert(linhas);
   if (error) return msg("#rpMsg", "erro", /duplicate|unique/i.test(error.message) ? "Já existe preço com essa data para este cliente. Cancele o antigo na lista abaixo e salve de novo." : erroCr(error));
-  $("#rpTon").value = ""; $("#rpBarro").value = "";
-  await carregarReceber(); msg("#rpMsg", "ok", `Preço salvo, vale a partir de ${br(vale)}.`);
+  $("#rpTon").value = "";
+  await carregarReceber(); msg("#rpMsg", "ok", `${linhas.length} preço(s) salvo(s), valendo a partir de ${br(vale)}.`);
 });
+$("#btCrNovoCliente").addEventListener("click", () => janelaEditar("Novo cliente", [
+  { nome: "nome", rotulo: "Nome / razão social" },
+  { nome: "balanca", rotulo: "Nome como sai no relatório da balança (se já souber)" },
+  { nome: "doc", rotulo: "CPF ou CNPJ" },
+  { nome: "fone", rotulo: "Telefone" }], async v => {
+  if (!v.nome) return "Informe o nome do cliente.";
+  const nb = (v.balanca || v.nome).toUpperCase().replace(/\s+/g, " ").trim();
+  if (rz.clientes.some(c => normNome(c.nome_balanca) === normNome(nb)) ) return "Já existe cliente com esse nome da balança.";
+  const { data, error } = await db.from("clientes").insert({ nome: v.nome, nome_balanca: nb, cpf_cnpj: v.doc || null, telefone: v.fone || null }).select();
+  if (error) return /duplicate|unique/i.test(error.message) ? "Já existe cliente com esse nome da balança." : erroTxt(error);
+  $("#rpCliente").dataset.tocado = 1; $("#rpCliente").dataset.novo = data?.[0]?.id || "";
+  msg("#rpMsg", "ok", `Cliente ${esc(v.nome)} cadastrado. Agora escolha a forma de cobrança e digite os preços.`);
+}, async () => { await carregarReceber(); if ($("#rpCliente").dataset.novo) { $("#rpCliente").value = $("#rpCliente").dataset.novo; mostrarPrecos(); } }, true));
+$("#btCrNovoProduto").addEventListener("click", () => janelaEditar("Novo produto", [
+  { nome: "nome", rotulo: "Nome do produto (ex.: Brita 1)" },
+  { nome: "cobra", rotulo: "Cobra por", valor: "tonelada", opcoes: [["tonelada", "Tonelada (pesado)"], ["carrada", "Carrada (como o barro)"]] }], async v => {
+  if (!v.nome) return "Informe o nome do produto.";
+  const { error } = await db.from("produtos").insert({ nome: v.nome, cobra_por: v.cobra });
+  if (error) return /duplicate|unique/i.test(error.message) ? "Já existe produto com esse nome." : erroCr(error);
+  msg("#rpMsg", "ok", `Produto ${esc(v.nome)} cadastrado. Para as carradas entrarem com ele, ligue o nome que sai na balança em Controle de pesagem > Cadastros (Nome na balança → Produto do sistema).`);
+}, carregarReceber, true));
 
 document.addEventListener("click", async e => {
-  const d = e.target.closest("[data-rir],[data-rpreparar],[data-rpdf],[data-rextrato],[data-rreceber],[data-rreceber-cli],[data-reditar-cob],[data-rcancelar-cob],[data-reditar-rec],[data-rcancelar-rec],[data-rcancelar-preco],[data-rver-preco]");
+  const d = e.target.closest("[data-rir],[data-rpreparar],[data-rpdf],[data-rextrato],[data-rreceber],[data-rreceber-cli],[data-reditar-cob],[data-rcancelar-cob],[data-reditar-rec],[data-rcancelar-rec],[data-rcancelar-preco],[data-rver-preco],[data-rabater-cob]");
   if (!d || !rz) return;
   const ds = d.dataset;
   if (ds.rir) { e.preventDefault(); return irReceber(ds.rir); }
@@ -4030,6 +4106,18 @@ document.addEventListener("click", async e => {
     mostrarPreviaCobranca(); return $("#rGerarCard").scrollIntoView({ behavior: "smooth" });
   }
   if (ds.rpdf) return pdfCobranca(Number(ds.rpdf));
+  if (ds.rabaterCob) {
+    const c = rz.cobrancas.find(x => x.id === Number(ds.rabaterCob)), cargas = dieselAberto(c.cliente_id);
+    if (!cargas.length) return msg("#rMsg", "aviso", "Este cliente não tem diesel em aberto.");
+    const tot = cargas.reduce((t, x) => t + Number(x.saldo), 0);
+    if (!confirm(`Abater o diesel da cobrança ${c.numero} de ${c.cliente}?\n\n${cargas.map(x => `${x.codigo} (${br(x.data)}): ${real(x.saldo)}`).join("\n")}\n\nTotal do diesel: ${real(tot)}\nSaldo da cobrança: ${real(c.saldo)}` +
+      (tot > Number(c.saldo) + 0.004 ? `\n\nO diesel é maior: sobram ${real(tot - Number(c.saldo))} de crédito para a próxima cobrança.` : ""))) return;
+    const { error } = await db.rpc("abater_diesel", { p_cargas: cargas.map(x => x.carga_id), p_cobranca: c.id, p_data: hojeBR() });
+    if (error) return msg("#rMsg", "erro", erroCr(error));
+    await carregarReceber(); const n = rz.cobrancas.find(x => x.id === c.id);
+    const m = `Diesel abatido: ${real(tot)}. Saldo da cobrança ${esc(c.numero)}: ${real(n?.saldo)}. <button class="mini" data-rpdf="${c.id}">Baixar PDF</button>`;
+    msg("#rMsg", "ok", m); if (!$("#rgMsg").classList.contains("escondido")) msg("#rgMsg", "ok", m); return;
+  }
   if (ds.rextrato) return pdfExtratoCr(Number(ds.rextrato));
   if (ds.rreceber || ds.rreceberCli) {
     const c = ds.rreceber ? rz.cobrancas.find(x => x.id === Number(ds.rreceber)) : null;
@@ -4088,6 +4176,217 @@ document.addEventListener("click", async e => {
     await carregarReceber(); return msg("#rpMsg", "ok", "Preço cancelado.");
   }
 });
+
+// ------------------------------------------------------------------ modo teste (contas a receber e a pagar)
+let modoTeste = null;
+async function carregarModoTeste() {
+  const { data, error } = await db.from("cr_config").select("*").eq("id", 1).maybeSingle();
+  modoTeste = error ? null : !!data?.modo_teste;
+  document.querySelectorAll(".cr-teste").forEach(el => el.innerHTML = modoTeste
+    ? `<div class="msg aviso" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span><b>MODO TESTE.</b> Cobranças, recebimentos e pagamentos do diesel ficam marcados como teste e não valem. Quando você der o ok, os testes são zerados e passa a valer.</span>
+       <button class="bt sec" data-zerar-testes style="margin-left:auto">Zerar testes</button></div>` : "");
+}
+// marca d'água nas páginas do PDF gerado em teste
+function marcaTeste(doc) {
+  for (let i = 1; i <= doc.internal.getNumberOfPages(); i++) {
+    doc.setPage(i); doc.setFont("helvetica", "bold"); doc.setFontSize(60); doc.setTextColor(230, 150, 40);
+    doc.text("TESTE", 105, 160, { align: "center", angle: 30 });
+    doc.setFontSize(10); doc.text("Documento de teste, sem valor", 105, 170, { align: "center" });
+  }
+}
+const dieselAberto = cliId => (rz?.diesel || []).filter(x => x.cliente_id === cliId && Number(x.saldo) > 0.004).sort((a, b) => a.data.localeCompare(b.data));
+
+// editar cliente, produto e preço (contas a receber)
+function editarClienteCr() {
+  const c = cliCr(Number($("#rpCliente").value)); if (!c) return;
+  janelaEditar(`Editar cliente`, [
+    { nome: "nome", rotulo: "Nome / razão social", valor: c.nome },
+    { nome: "doc", rotulo: "CPF ou CNPJ", valor: c.cpf_cnpj },
+    { nome: "fone", rotulo: "Telefone", valor: c.telefone },
+    { nome: "ativo", rotulo: "Situação", valor: c.ativo ? "1" : "0", opcoes: [["1", "Ativo"], ["0", "Inativo (não aparece para cobrar)"]] }], async v => {
+    if (!v.nome) return "Informe o nome.";
+    const { error } = await db.from("clientes").update({ nome: v.nome, cpf_cnpj: v.doc || null, telefone: v.fone || null, ativo: v.ativo === "1" }).eq("id", c.id);
+    if (error) return erroTxt(error);
+    msg("#rpMsg", "ok", "Cliente atualizado. O nome que sai na balança não muda.");
+  }, carregarReceber, true);
+}
+function editarProdutoCr(id) {
+  const p = rz.produtos.find(x => x.id === id); if (!p) return;
+  janelaEditar(`Editar produto`, [
+    { nome: "nome", rotulo: "Nome do produto", valor: p.nome },
+    { nome: "cobra", rotulo: "Cobra por", valor: p.cobra_por || "tonelada", opcoes: [["tonelada", "Tonelada (pesado)"], ["carrada", "Carrada (como o barro)"]] }], async v => {
+    if (!v.nome) return "Informe o nome.";
+    const { error } = await db.from("produtos").update({ nome: v.nome, cobra_por: v.cobra }).eq("id", id);
+    if (error) return /duplicate|unique/i.test(error.message) ? "Já existe produto com esse nome." : erroCr(error);
+    msg("#rpMsg", "ok", "Produto atualizado. Vale para as próximas cobranças; as já geradas não mudam.");
+  }, carregarReceber, true);
+}
+function editarPrecoCr(id) {
+  const p = rz.precosTodos.find(x => x.id === id); if (!p) return;
+  janelaEditar(`Editar preço de ${esc(rz.produtos.find(x => x.id === p.produto_id)?.nome || "")}`, [
+    { nome: "valor", rotulo: "Preço (R$)", valor: real2(p.valor) },
+    { nome: "vale", rotulo: "Vale a partir de", tipo: "date", valor: p.vale_de }], async v => {
+    const valor = valorBR(v.valor);
+    if (!(valor > 0)) return "Informe o valor.";
+    if (!v.vale) return "Informe a data.";
+    const { error } = await db.rpc("editar_preco", { p_id: id, p_valor: valor, p_vale_de: v.vale, p_motivo: v.motivo });
+    if (error) return /editar_preco/.test(error.message) && /not find|does not exist|schema cache/i.test(error.message) ? "Falta rodar a query 025 no Supabase." : erroTxt(error);
+    msg("#rpMsg", "ok", "Preço corrigido. Cobranças já geradas não mudam.");
+  }, carregarReceber);
+}
+$("#btCrNovoProduto").insertAdjacentHTML("afterend", '<button class="bt sec" id="btEditarCliente">Editar cliente</button>');
+$("#btEditarCliente").addEventListener("click", editarClienteCr);
+
+// ------------------------------------------------------------------ contas a pagar (diesel) · só administrador
+let pz = null;
+const FORMAS_PAG = ["PIX", "Boleto", "Transferência", "Dinheiro", "Cheque", "Outro"];
+function sitPagar(x, hoje = hojeBR()) {
+  if (x.valor == null) return { txt: "sem valor lançado", cor: "var(--aviso)", chave: "semvalor" };
+  if (Number(x.saldo) <= 0.004) return { txt: Number(x.abatido) >= Number(x.valor) - 0.004 ? "abatida do cliente" : "paga", cor: "var(--ok)", chave: "paga" };
+  const d = diasEntre(hoje, x.vencimento);
+  if (d < 0) return { txt: `vencida há ${-d} dia(s)`, cor: "var(--erro)", chave: "vencida" };
+  return { txt: d === 0 ? "vence hoje" : `vence em ${d} dia(s)`, cor: d <= 7 ? "var(--aviso)" : "var(--texto)", chave: "aberta" };
+}
+// recarrega sem apagar o aviso que acabou de aparecer
+async function recarregarPagar() {
+  const m = $("#cpMsg"), h = m.innerHTML, c = m.className;
+  await carregarPagar(); m.innerHTML = h; m.className = c;
+}
+async function carregarPagar() {
+  msg("#cpMsg", "", "");
+  try {
+    const [dz2, pg, fo, cl, cb] = await Promise.all([todasLinhas("v_cp_diesel", "carga_id"), todasLinhas("v_cp_pagamentos", "id"),
+      db.from("diesel_fornecedores").select("*").order("nome"), db.from("clientes").select("*").order("nome"), todasLinhas("v_cr_cobrancas", "id")]);
+    if (fo.error) throw fo.error; if (cl.error) throw cl.error;
+    pz = { diesel: dz2, pagamentos: pg, fornecedores: fo.data, clientes: cl.data.filter(c => !c.unir_em), cobrancas: cb };
+  } catch (e) {
+    return msg("#cpMsg", "erro", "Não foi possível carregar o contas a pagar. " + (/cp_|cr_|does not exist|schema cache/i.test(e?.message || "") ? "Falta rodar a query 025 no Supabase." : erroTxt(e)));
+  }
+  await carregarModoTeste();
+  const ant = $("#cpForn").value;
+  $("#cpForn").innerHTML = '<option value="">Todos</option>' + [...new Set(pz.diesel.map(x => x.fornecedor.trim()))].sort().map(f => `<option>${esc(f)}</option>`).join("");
+  if (ant) $("#cpForn").value = ant;
+  mostrarPagar(); mostrarPagamentosDiesel(); mostrarFornecedoresPagar();
+}
+function mostrarPagar() {
+  const hoje = hojeBR(), mes = hoje.slice(0, 7), soma = (l, f) => l.reduce((t, x) => t + Number(f(x) || 0), 0);
+  const ab = pz.diesel.filter(x => Number(x.saldo) > 0.004), venc = ab.filter(x => x.vencimento < hoje), sem = pz.diesel.filter(x => x.valor == null);
+  const pagMes = pz.pagamentos.filter(p => p.situacao === "valida" && p.pago_em.slice(0, 7) === mes);
+  $("#cpKpis").innerHTML = [
+    ["Diesel em aberto", real(soma(ab, x => x.saldo)), `${ab.length} carga(s)`, ""],
+    ["Vencido", real(soma(venc, x => x.saldo)), `${venc.length} carga(s)`, venc.length ? "var(--erro)" : ""],
+    ["Abatido no mês", real(soma(pagMes.filter(p => p.recebimento_id), p => p.valor)), "descontado de clientes", ""],
+    ["Pago no mês", real(soma(pagMes.filter(p => !p.recebimento_id), p => p.valor)), "PIX, boleto, dinheiro", ""],
+    ["Sem valor lançado", String(sem.length), "carga(s): lance em Diesel > Cargas", sem.length ? "var(--aviso)" : ""]
+  ].map(([t, v, d, cor]) => `<div class="kpi" style="${cor ? "border-color:" + cor : ""}"><small>${t}</small><b style="${cor ? "color:" + cor : ""}">${v}</b><span class="delta">${d}</span></div>`).join("");
+  const sit = $("#cpSit").value, forn = $("#cpForn").value;
+  const l = pz.diesel.map(x => ({ ...x, s: sitPagar(x, hoje) }))
+    .filter(x => (!forn || x.fornecedor.trim() === forn) && (sit === "todas" || (sit === "aberto" ? ["aberta", "vencida"].includes(x.s.chave) : x.s.chave === sit)))
+    .sort((a, b) => b.data.localeCompare(a.data) || (b.codigo || "").localeCompare(a.codigo || ""));
+  $("#cpCargas").innerHTML = l.length ? `<table><tr><th>Carga</th><th>Retirada</th><th>Fornecedor</th><th class="n">Litros</th><th class="n">Valor</th><th class="n">Pago / abatido</th><th class="n">Saldo</th><th>Vencimento</th><th></th></tr>` +
+    l.map(x => `<tr><td><b>${esc(x.codigo || "")}</b></td><td>${br(x.data)}</td><td>${esc(x.fornecedor)}${x.cliente ? `<br><small style="color:var(--suave)">abate de ${esc(x.cliente)}</small>` : ""}</td>
+      <td class="n">${lit(x.litros)} L</td><td class="n">${x.valor == null ? "—" : real(x.valor)}</td><td class="n">${real(x.pago)}${Number(x.abatido) > 0 ? `<br><small style="color:var(--suave)">abatido ${real(x.abatido)}</small>` : ""}</td>
+      <td class="n"><b>${x.saldo == null ? "—" : real(x.saldo)}</b></td><td>${br(x.vencimento)}<br><small style="color:${x.s.cor};font-weight:600">${x.s.txt}</small></td>
+      <td style="white-space:nowrap">${Number(x.saldo) > 0.004 ? `${x.cliente_id ? `<button class="mini" data-pabater="${x.carga_id}">Abater do cliente</button> ` : ""}<button class="mini" data-ppagar="${x.carga_id}">Pagar</button>` : ""}</td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Nenhuma carga de diesel nessa situação.</div>';
+}
+function mostrarPagamentosDiesel() {
+  const l = [...pz.pagamentos].sort((a, b) => b.pago_em.localeCompare(a.pago_em) || b.id - a.id);
+  $("#cpPagamentos").innerHTML = l.length ? `<table><tr><th>Data</th><th>Carga</th><th>Fornecedor</th><th>Forma</th><th class="n">Valor</th><th>Observação</th><th></th></tr>` +
+    l.map(p => p.situacao === "cancelada"
+      ? `<tr style="color:var(--suave)"><td>${br(p.pago_em)}</td><td>${esc(p.codigo || "")}</td><td>${esc(p.fornecedor)}</td><td>${esc(p.forma)}</td><td class="n"><s>${real(p.valor)}</s></td><td colspan="2">cancelado: ${esc(p.motivo_cancelamento)}</td></tr>`
+      : `<tr><td>${br(p.pago_em)}${p.teste ? ' <span class="tag-teste">TESTE</span>' : ""}</td><td>${esc(p.codigo || "")}</td><td>${esc(p.fornecedor)}</td>
+        <td>${p.recebimento_id ? `Abatimento${p.cobranca ? ` na ${esc(p.cobranca)}` : " (crédito do cliente)"}` : esc(p.forma)}</td><td class="n"><b>${real(p.valor)}</b></td>
+        <td>${esc(p.observacao || "")}${editadoTxt(p)}</td>
+        <td style="white-space:nowrap">${p.recebimento_id ? "" : `<button class="mini" data-peditar-pag="${p.id}">Editar</button> `}<button class="mini" data-pcancelar-pag="${p.id}">Cancelar</button></td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Nenhum pagamento de diesel lançado ainda.</div>';
+}
+function mostrarFornecedoresPagar() {
+  const opCli = sel => '<option value="">— não abate de cliente —</option>' + pz.clientes.map(c => `<option value="${c.id}" ${c.id === sel ? "selected" : ""}>${esc(c.nome)}</option>`).join("");
+  $("#cpFornecedores").innerHTML = pz.fornecedores.length ? `<table><tr><th>Fornecedor</th><th>Abate do cliente</th><th>Prazo (dias)</th><th></th></tr>` +
+    pz.fornecedores.filter(f => f.ativo).map(f => `<tr><td><b>${esc(f.nome)}</b></td><td><select data-pf-cli="${f.id}">${opCli(f.cliente_id)}</select></td>
+      <td><input type="number" min="0" max="365" step="1" data-pf-prazo="${f.id}" value="${f.prazo_dias ?? 0}" style="min-width:70px;width:80px"></td>
+      <td><button class="mini" data-pf-salvar="${f.id}">Salvar</button></td></tr>`).join("") + "</table>"
+    : '<div class="vazio">Nenhum fornecedor de diesel cadastrado. Cadastre em Controle de Diesel > Fornecedores.</div>';
+}
+$("#cpSit").addEventListener("change", mostrarPagar);
+$("#cpForn").addEventListener("change", mostrarPagar);
+
+document.addEventListener("click", async e => {
+  const d = e.target.closest("[data-zerar-testes],[data-ppagar],[data-pabater],[data-peditar-pag],[data-pcancelar-pag],[data-pf-salvar],[data-reditar-preco],[data-reditar-prod]");
+  if (!d) return;
+  const ds = d.dataset;
+  if ("zerarTestes" in ds) {
+    if (!confirm("Zerar os testes?\n\nTodas as cobranças, recebimentos e pagamentos do diesel feitos em teste são cancelados (ficam guardados como \"Teste\").\nAs carradas e o diesel voltam a ficar em aberto para testar de novo.\n\nO modo teste continua ligado.")) return;
+    const { data, error } = await db.rpc("cr_zerar_testes", { p_encerrar: false });
+    const alvo = document.querySelector("#aba-pagar:not(.escondido)") ? "#cpMsg" : "#rMsg";
+    if (error) return msg(alvo, "erro", erroTxt(error));
+    if (rz) await carregarReceber(); if (pz) await carregarPagar();
+    return msg(alvo, "ok", `Testes zerados: ${data} lançamento(s) cancelado(s). Pode testar de novo.`);
+  }
+  if (ds.reditarPreco) return editarPrecoCr(Number(ds.reditarPreco));
+  if (ds.reditarProd) return editarProdutoCr(Number(ds.reditarProd));
+  if (!pz) return;
+  if (ds.ppagar) {
+    const x = pz.diesel.find(y => y.carga_id === Number(ds.ppagar));
+    return janelaEditar(`Pagar diesel ${esc(x.codigo || "")} · ${esc(x.fornecedor)}`, [
+      { nome: "data", rotulo: "Data do pagamento", tipo: "date", valor: hojeBR() },
+      { nome: "valor", rotulo: `Valor (saldo ${real(x.saldo)})`, valor: real2(x.saldo) },
+      { nome: "forma", rotulo: "Forma", valor: "PIX", opcoes: FORMAS_PAG.map(f => [f, f]) },
+      { nome: "obs", rotulo: "Observação" }], async v => {
+      const valor = valorBR(v.valor);
+      if (!v.data) return "Informe a data.";
+      if (!(valor > 0)) return "Informe o valor.";
+      const { error } = await db.rpc("pagar_diesel", { p_carga: x.carga_id, p_data: v.data, p_valor: valor, p_forma: v.forma, p_observacao: v.obs });
+      if (error) return erroTxt(error);
+      msg("#cpMsg", "ok", `Pagamento de ${real(valor)} lançado na carga ${esc(x.codigo || "")}.`);
+    }, recarregarPagar, true);
+  }
+  if (ds.pabater) {
+    const x = pz.diesel.find(y => y.carga_id === Number(ds.pabater));
+    const abertas = pz.cobrancas.filter(c => c.cliente_id === x.cliente_id && c.situacao === "valida" && Number(c.saldo) > 0.004).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+    return janelaEditar(`Abater ${esc(x.codigo || "")} (${real(x.saldo)}) de ${esc(x.cliente)}`, [
+      { nome: "cob", rotulo: "Abater em", valor: abertas[0]?.id ?? "", opcoes: [...abertas.map(c => [c.id, `${c.numero} · saldo ${real(c.saldo)} · vence ${br(c.vencimento)}`]), ["", "Nenhuma agora: fica de crédito para a próxima cobrança"]] },
+      { nome: "data", rotulo: "Data", tipo: "date", valor: hojeBR() }], async v => {
+      const { error } = await db.rpc("abater_diesel", { p_cargas: [x.carga_id], p_cobranca: v.cob ? Number(v.cob) : null, p_data: v.data || hojeBR() });
+      if (error) return erroTxt(error);
+      msg("#cpMsg", "ok", `Carga ${esc(x.codigo || "")} abatida de ${esc(x.cliente)}: ${real(x.saldo)}.`);
+    }, recarregarPagar, true);
+  }
+  if (ds.peditarPag) {
+    const p = pz.pagamentos.find(y => y.id === Number(ds.peditarPag));
+    return janelaEditar(`Editar pagamento do diesel ${esc(p.codigo || "")}`, [
+      { nome: "data", rotulo: "Data", tipo: "date", valor: p.pago_em },
+      { nome: "valor", rotulo: "Valor (R$)", valor: real2(p.valor) },
+      { nome: "forma", rotulo: "Forma", valor: p.forma, opcoes: FORMAS_PAG.map(f => [f, f]) },
+      { nome: "obs", rotulo: "Observação", valor: p.observacao }], async v => {
+      const valor = valorBR(v.valor);
+      if (!v.data) return "Informe a data.";
+      if (!(valor > 0)) return "Informe o valor.";
+      const { error } = await db.rpc("editar_pagamento_diesel", { p_id: p.id, p_data: v.data, p_valor: valor, p_forma: v.forma, p_observacao: v.obs, p_motivo: v.motivo });
+      if (error) return erroTxt(error);
+      msg("#cpMsg", "ok", "Pagamento corrigido. O valor antigo fica guardado na auditoria.");
+    }, recarregarPagar);
+  }
+  if (ds.pcancelarPag) {
+    const p = pz.pagamentos.find(y => y.id === Number(ds.pcancelarPag));
+    const motivo = prompt(p.recebimento_id
+      ? `Cancelar o abatimento da carga ${p.codigo}?\nTodo o abatimento feito junto com ela é desfeito: o diesel volta a ficar em aberto e a cobrança do cliente volta a ter o saldo.\n\nMotivo:`
+      : `Cancelar o pagamento de ${real(p.valor)} da carga ${p.codigo}?\nO valor volta a ficar em aberto.\n\nMotivo:`);
+    if (!motivo?.trim()) return;
+    const { error } = await db.rpc("cancelar_pagamento_diesel", { p_id: p.id, p_motivo: motivo });
+    if (error) return msg("#cpMsg", "erro", erroTxt(error));
+    await carregarPagar(); return msg("#cpMsg", "ok", "Cancelado. Continua guardado no sistema.");
+  }
+  if (ds.pfSalvar) {
+    const id = Number(ds.pfSalvar), cli = $(`[data-pf-cli="${id}"]`).value, prazo = Number($(`[data-pf-prazo="${id}"]`).value || 0);
+    if (!(prazo >= 0 && prazo <= 365)) return msg("#cpfMsg", "erro", "Prazo entre 0 e 365 dias.");
+    const { error } = await db.from("diesel_fornecedores").update({ cliente_id: cli ? Number(cli) : null, prazo_dias: Math.round(prazo) }).eq("id", id);
+    if (error) return msg("#cpfMsg", "erro", erroTxt(error));
+    await carregarPagar(); return msg("#cpfMsg", "ok", "Fornecedor salvo.");
+  }
+});
+
 </script>
 </body>
 </html>
