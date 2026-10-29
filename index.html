@@ -1891,7 +1891,8 @@ async function carregarPainel() {
   const semRel = [];
   for (let d = de > primeiraData ? de : primeiraData; d < fimContagem; d = somaDias(d, 1))
     if (new Date(d + "T12:00:00").getDay() !== 0 && !comMov.has(d)) semRel.push(br(d).slice(0, 5));
-  if (semRel.length && papel !== "diesel") al.push(`<b>${semRel.length} dia(s) de segunda a sábado sem relatório anexado:</b> ${semRel.slice(0, 20).join(", ")}${semRel.length > 20 ? "…" : ""}. Se teve expedição, falta anexar.`);
+  // aviso de dia sem relatório desligado a pedido do Alfredo (2026-10-29)
+  if (false && semRel.length && papel !== "diesel") al.push(`<b>${semRel.length} dia(s) de segunda a sábado sem relatório anexado:</b> ${semRel.slice(0, 20).join(", ")}${semRel.length > 20 ? "…" : ""}. Se teve expedição, falta anexar.`);
   const ativos = (imps || []).filter(i => !um(i.importacao_cancelamentos));
   const semConf = ativos.filter(i => !um(i.conferencias)).length;
   const paraVer = ativos.filter(i => um(i.conferencias) && !um(um(i.conferencias).conferencias_vistas)).length;
