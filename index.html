@@ -2962,8 +2962,15 @@ $("#btPagarForn").addEventListener("click", async () => {
   $("#btPagarForn").disabled = false;
 });
 
-$("#btExtratoForn").addEventListener("click", () => {
+$("#btExtratoForn").addEventListener("click", async () => {
   const X = extratoForn(); if (!X.cargas.length) return msg("#dxMsg", "erro", "Nenhuma retirada deste fornecedor no período.");
+  // abatimentos e pagamentos (query 025): mostram a situação de cada carga
+  let pgs = null;
+  if (papel === "admin") { const { data, error } = await db.from("v_cp_pagamentos").select("*").in("carga_id", X.cargas.map(c => c.id)).eq("situacao", "valida"); if (!error) pgs = data; }
+  const sitCarga = c => { const pp = (pgs || []).filter(p => p.carga_id === c.id), ab = pp.filter(p => p.recebimento_id).reduce((t, p) => t + Number(p.valor), 0), pg = pp.filter(p => !p.recebimento_id).reduce((t, p) => t + Number(p.valor), 0);
+    if (c.valor_total == null) return "sem valor";
+    const falta = Number(c.valor_total) - ab - pg;
+    return [ab > 0.004 ? `abatido ${real(ab)}${pp.find(p => p.cobranca) ? " na " + pp.find(p => p.cobranca).cobranca : ""}` : "", pg > 0.004 ? `pago ${real(pg)}` : "", falta > 0.004 ? `em aberto ${real(falta)}` : ""].filter(Boolean).join(" · "); };
   const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
   const azul = [31, 58, 95], W = 210, M = 12, num = `FOR-${X.de.replace(/-/g, "")}-${X.ate.replace(/-/g, "")}`;
   doc.addImage(LOGO, "PNG", M, 7, 42, 12);
@@ -2986,10 +2993,21 @@ $("#btExtratoForn").addEventListener("click", () => {
     doc.text(`página ${doc.internal.getCurrentPageInfo().pageNumber}`, W - M, 289, { align: "right" }); };
   const estilo = { margin: { left: M, right: M, bottom: 14 }, styles: { fontSize: 8, cellPadding: 1.8 }, headStyles: { fillColor: azul, textColor: 255 },
     footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" }, alternateRowStyles: { fillColor: [244, 245, 247] }, didDrawPage: rodape };
-  doc.autoTable({ ...estilo, startY: 63, head: [["Retirada", "Código", "Litros", "Recibo", "Valor", "R$/L"]],
-    body: X.cargas.map(c => [dataHora(c.retirado_em), c.codigo, lit(c.litros), c.comprovante_caminho ? "anexado" : "sem recibo", c.valor_total == null ? "a pagar" : real(c.valor_total), c.valor_total == null ? "—" : (c.valor_total / c.litros).toFixed(2).replace(".", ",")]),
-    foot: [["TOTAL", "", lit(X.litros), "", X.valor ? real(X.valor) : "", ""]],
+  doc.autoTable({ ...estilo, startY: 63, head: [["Retirada", "Código", "Litros", "Recibo", "Valor", "R$/L", ...(pgs ? ["Situação"] : [])]],
+    body: X.cargas.map(c => [dataHora(c.retirado_em), c.codigo, lit(c.litros), c.comprovante_caminho ? "anexado" : "sem recibo", c.valor_total == null ? "a pagar" : real(c.valor_total), c.valor_total == null ? "—" : (c.valor_total / c.litros).toFixed(2).replace(".", ","), ...(pgs ? [sitCarga(c)] : [])]),
+    foot: [["TOTAL", "", lit(X.litros), "", X.valor ? real(X.valor) : "", "", ...(pgs ? [""] : [])]],
     columnStyles: { 2: { halign: "right", fontStyle: "bold" }, 4: { halign: "right" }, 5: { halign: "right" } } });
+  if (pgs && pgs.length) {
+    const ab = pgs.filter(p => p.recebimento_id).reduce((t, p) => t + Number(p.valor), 0), pg = pgs.filter(p => !p.recebimento_id).reduce((t, p) => t + Number(p.valor), 0);
+    const aberto = Math.max(0, Number(X.valor || 0) - ab - pg);
+    let y = doc.lastAutoTable.finalY + 8; if (y > 255) { doc.addPage(); y = 18; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text("Resumo", M, y); y += 6;
+    doc.setFont("helvetica", "normal");
+    for (const [t, v] of [["Valor do diesel no período", Number(X.valor || 0)], ["Abatido do que o cliente deve", ab], ["Pago (PIX, boleto, dinheiro)", pg], ["Em aberto", aberto]]) {
+      if (t !== "Valor do diesel no período" && v < 0.005) continue;
+      doc.text(t, M + 2, y); doc.text(real(v), W - M, y, { align: "right" }); y += 5.5; }
+    doc.lastAutoTable.finalY = y - 2;
+  }
   if (X.maquinas.length) {
     let y = doc.lastAutoTable.finalY + 8; if (y > 250) { doc.addPage(); y = 18; }
     doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0); doc.text("Para onde foi o diesel", M, y);
@@ -3001,6 +3019,7 @@ $("#btExtratoForn").addEventListener("click", () => {
   doc.text(doc.splitTextToSize("Os litros de cada retirada foram lançados no sistema no momento da retirada, com a foto do recibo assinado. Os recibos ficam guardados no sistema e podem ser apresentados a qualquer momento.", W - 2 * M), M, y);
   doc.setDrawColor(120); doc.line(M, y + 26, M + 75, y + 26); doc.line(W - M - 75, y + 26, W - M, y + 26);
   doc.text("Geolux", M, y + 30); doc.text(X.forn, W - M - 75, y + 30);
+  if ((pgs || []).some(p => p.teste)) marcaTeste(doc);
   doc.save(`Geolux_extrato_diesel_${X.forn.replace(/[^\w]+/g, "_")}_${X.de}_a_${X.ate}.pdf`);
 });
 
@@ -3970,17 +3989,38 @@ async function pdfCobranca(id) {
     body: its.map(x => [br(x.data), x.ticket, placas[x.ticket] || "", nomeProd(x.produto_id), qtdItem(x), real(x.preco) + (x.cobra_por === "carrada" ? "/carrada" : "/t"), real(x.valor)]),
     foot: [["TOTAL", `${its.length} carradas`, "", "", ton(kgT) + " t", "", real(c.valor)]],
     columnStyles: { 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" } } });
-  let y = doc.lastAutoTable.finalY + 8;
-  if (y > 270) { doc.addPage(); y = 20; }
-  doc.setFontSize(10); doc.setFont("helvetica", "normal");
+  let y = doc.lastAutoTable.finalY + 9;
   const { data: bx } = await db.from("cr_baixas").select("*").eq("cobranca_id", id).eq("ativo", true);
   const recs = (bx || []).map(b => ({ ...b, r: rz.recebimentos.find(r => r.id === b.recebimento_id) }));
   const dz = recs.filter(b => b.r?.forma === "Abatimento diesel"), outros = recs.filter(b => b.r?.forma !== "Abatimento diesel");
-  for (const b of dz) { doc.text(`(-) Abatimento diesel ${b.r.observacao ? "(" + b.r.observacao.replace(/^Diesel: /, "") + ")" : ""}: ${real(b.valor)}`, W - M, y, { align: "right", maxWidth: W - 2 * M }); y += 6; }
-  const somaOut = outros.reduce((t, b) => t + Number(b.valor), 0);
-  if (somaOut > 0) { doc.text(`(-) Já recebido: ${real(somaOut)}`, W - M, y, { align: "right" }); y += 6; }
-  doc.setFont("helvetica", "bold"); doc.text(`Saldo a pagar: ${real(c.saldo)} até ${br(c.vencimento)}`, W - M, y, { align: "right" });
-  if (c.observacao) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text(`Obs.: ${c.observacao}`, M, y + 8, { maxWidth: W - 2 * M }); }
+  const somaDz = dz.reduce((t, b) => t + Number(b.valor), 0), somaOut = outros.reduce((t, b) => t + Number(b.valor), 0);
+  // diesel abatido nesta cobrança: data, carga, litros e preço do litro (vai para o cliente conferir)
+  let pgDz = [];
+  if (dz.length) { const { data } = await db.from("v_cp_pagamentos").select("*").eq("cobranca_id", id).eq("situacao", "valida"); pgDz = (data || []).filter(p => p.recebimento_id); }
+  const tit = t => { if (y > 255) { doc.addPage(); y = 20; } doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...azul); doc.text(t, M, y); y += 3; };
+  if (pgDz.length) {
+    const carga = cid => (rz.diesel || []).find(x => x.carga_id === cid) || {};
+    const lin = pgDz.map(p => ({ p, g: carga(p.carga_id) })).sort((a, b) => String(a.g.data || "").localeCompare(String(b.g.data || "")));
+    const totL = lin.reduce((t, x) => t + Number(x.g.litros || 0), 0), totV = lin.reduce((t, x) => t + Number(x.p.valor), 0);
+    tit(`Diesel fornecido e abatido: ${lin.length} carga(s), ${totL.toLocaleString("pt-BR")} litros`);
+    doc.autoTable({ margin: { left: M, right: M, bottom: 14 }, startY: y + 1, styles: { fontSize: 8.5, cellPadding: 1.8 }, headStyles: { fillColor: azul, textColor: 255 },
+      footStyles: { fillColor: [220, 230, 241], textColor: 0, fontStyle: "bold" }, alternateRowStyles: { fillColor: [244, 245, 247] }, didDrawPage: rodape,
+      head: [["Data", "Carga", "Litros", "Preço do litro", "Valor abatido"]],
+      body: lin.map(({ p, g }) => [br(g.data || p.pago_em), p.codigo || g.codigo || "", Number(g.litros || 0).toLocaleString("pt-BR") + " L", g.litros ? real(Number(g.valor) / Number(g.litros)) : "", real(p.valor)]),
+      foot: [["TOTAL", `${lin.length} carga(s)`, totL.toLocaleString("pt-BR") + " L", "", real(totV)]],
+      columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } });
+    y = doc.lastAutoTable.finalY + 9;
+    if (totV - somaDz > 0.004) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
+      doc.text(`O diesel passou do valor desta cobrança: ${real(totV - somaDz)} ficou de crédito para a próxima cobrança.`, M, y - 3); y += 4; }
+  }
+  tit("Resumo"); y += 4;
+  const lres = (t, v, neg) => { doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(0); doc.text(t, M + 2, y); doc.text((neg ? "- " : "") + real(v), W - M, y, { align: "right" }); y += 6; };
+  lres(`Carradas (${its.length})`, c.valor);
+  if (somaDz > 0) lres("Diesel abatido", somaDz, true);
+  if (somaOut > 0) lres("Já recebido", somaOut, true);
+  doc.setDrawColor(180); doc.setLineWidth(0.2); doc.line(W - M - 70, y - 4, W - M, y - 4);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text("Saldo a pagar", M + 2, y); doc.text(`${real(c.saldo)} até ${br(c.vencimento)}`, W - M, y, { align: "right" });
+  if (c.observacao) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60); doc.text(`Obs.: ${c.observacao}`, M, y + 8, { maxWidth: W - 2 * M }); }
   if (c.teste) marcaTeste(doc);
   doc.save(`${c.numero}-${normNome(c.cliente).replace(/[^a-z0-9]+/g, "-")}.pdf`);
 }
