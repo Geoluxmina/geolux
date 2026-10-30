@@ -2449,19 +2449,24 @@ function editarAbastecimento(id) {
 }
 function editarCarga(id) {
   const c = dz.cargas.find(x => x.id === id); if (!c) return;
+  const precoL = c.valor_total != null ? ` (hoje R$ ${(Number(c.valor_total) / Number(c.litros)).toFixed(2).replace(".", ",")} o litro)` : "";
   janelaEditar(`Editar carga ${esc(c.codigo)}`, [
     { nome: "quando", rotulo: "Data e hora da retirada", tipo: "datetime-local", valor: paraLocal(c.retirado_em) },
     { nome: "fornecedor", rotulo: "Fornecedor / posto", valor: c.fornecedor },
     { nome: "litros", rotulo: "Litros retirados", tipo: "number", valor: c.litros },
+    { nome: "valor", rotulo: `Valor da compra (R$)${precoL}`, valor: c.valor_total != null ? real2(c.valor_total) : "" },
     { nome: "obs", rotulo: "Observação", valor: c.observacao }], async v => {
-    const litros = numero(v.litros);
+    const litros = numero(v.litros), valor = valorBR(v.valor);
     if (!v.quando) return "Informe a data e hora.";
     if (!v.fornecedor) return "Informe o fornecedor.";
     if (!(litros > 0)) return "Informe os litros.";
-    const { error } = await db.rpc("editar_carga_diesel", { p_id: id, p_retirado_em: new Date(v.quando).toISOString(), p_fornecedor: v.fornecedor,
-      p_litros: litros, p_observacao: v.obs, p_motivo: v.motivo });
-    if (error) return erroRpcEditar(error);
-    msg("#dcMsg", "ok", `Carga ${esc(c.codigo)} editada.` + (c.valor_total != null && litros !== Number(c.litros) ? " Os litros mudaram: confira o valor da carga em Lançar valor." : ""));
+    if (Number.isNaN(valor) || (valor != null && valor < 0)) return "Valor da compra inválido. Ex.: 6.200,00";
+    const mudouValor = (valor == null ? null : Math.round(valor * 100)) !== (c.valor_total == null ? null : Math.round(Number(c.valor_total) * 100));
+    const args = { p_id: id, p_retirado_em: new Date(v.quando).toISOString(), p_fornecedor: v.fornecedor, p_litros: litros, p_observacao: v.obs, p_motivo: v.motivo };
+    const { error } = await db.rpc("editar_carga_diesel", mudouValor ? { ...args, p_valor: valor } : args);
+    if (error) return /schema cache|does not exist|Could not find/i.test(error.message || "") && mudouValor ? "Para mudar o valor da compra, falta rodar a query 028 no Supabase." : erroRpcEditar(error);
+    msg("#dcMsg", "ok", `Carga ${esc(c.codigo)} editada.` + (mudouValor ? ` Valor da compra agora ${valor == null ? "em branco" : real(valor)}; o contas a pagar já acompanha.` : "")
+      + (!mudouValor && c.valor_total != null && litros !== Number(c.litros) ? " Os litros mudaram: confira se o valor da compra continua certo." : ""));
   });
 }
 
